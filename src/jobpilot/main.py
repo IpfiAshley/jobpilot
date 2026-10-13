@@ -71,6 +71,7 @@ def list_jobs(
     location: str | None = Query(default=None, max_length=120),
     remote: bool | None = None,
     internship_only: bool = False,
+    early_career_only: bool = False,
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> list[JobRead]:
@@ -79,9 +80,36 @@ def list_jobs(
         if q:
             statement = statement.where(Job.title.ilike(f"%{q}%") | Job.description.ilike(f"%{q}%"))
         if location:
-            statement = statement.where(Job.location.ilike(f"%{location}%"))
+            if location.casefold() in {"south africa", "za"}:
+                statement = statement.where(or_(Job.country_code == "ZA", Job.location.ilike("%South Africa%")))
+            else:
+                statement = statement.where(Job.location.ilike(f"%{location}%"))
         if remote is not None:
             statement = statement.where(Job.is_remote.is_(remote))
+        if early_career_only:
+            terms = (
+                "intern", "graduate", "grad", "learnership", "trainee", "apprentice",
+                "vacation programme", "vacation program", "student programme", "student program",
+            )
+            text_fields = (Job.title, Job.employment_type, cast(Job.tags, String))
+            term_filters = [field.ilike(f"%{term}%") for field in text_fields for term in terms]
+            statement = statement.where(
+                or_(Job.country_code == "ZA", Job.location.ilike("%South Africa%")),
+                or_(*term_filters),
+            )
+            candidates = db.scalars(statement).all()
+            role_term = re.compile(
+                r"\b(?:intern(?:ship)?s?|graduates?|grad|learnerships?|trainees?|apprenticeships?|"
+                r"vacation programmes?|vacation programs?|student programmes?|student programs?)\b",
+                re.IGNORECASE,
+            )
+            rows = [
+                row for row in candidates
+                if role_term.search(row.title or "")
+                or role_term.search(row.employment_type or "")
+                or any(role_term.search(str(tag)) for tag in (row.tags or []))
+            ][offset : offset + limit]
+            return [JobRead.model_validate(row) for row in rows]
         if internship_only:
             statement = statement.where(
                 or_(
