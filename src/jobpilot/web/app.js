@@ -264,10 +264,10 @@ function isEarlyCareerRole(job) {
   return /\b(intern(?:ship)?s?|graduates?|grad|learnerships?|trainees?|apprentices?|apprenticeships?|vacation programmes?|vacation programs?|student programmes?|student programs?|entry.level|junior)\b/i.test(landingRoleText(job));
 }
 function isFocusedTechRole(job) {
-  return /\b(data science|data scientist|data analyst|business intelligence|bi analyst|software (?:developer|engineer)|web developer|application developer)\b/i.test(landingRoleText(job));
+  return /\b(data science|data scientist|data analyst|data engineer|business intelligence|bi (?:analyst|engineer|developer|consultant)|software (?:developer|engineer)|web developer|application developer)\b/i.test(landingRoleText(job));
 }
 function isITRole(job) {
-  return /\b(it|information technology|technology|software|data|analytics|cyber ?security|machine learning|artificial intelligence|cloud|devops|network|database|systems analyst|qa tester|technical support|programming|developer|engineer)\b/i.test(landingRoleText(job));
+  return /\b(it|information technology|technology|software|data|analytics|cyber ?security|machine learning|artificial intelligence|cloud|devops|network|database|systems analyst|systems engineer|qa (?:tester|engineer|automation|testing)|technical support|help desk|information security|programming|programmer|developer|software engineer|data engineer|network engineer|cloud engineer|security engineer|bi (?:analyst|engineer|developer|consultant)|business intelligence)\b/i.test(landingRoleText(job));
 }
 function isPreferredLandingRole(job) {
   const isSouthAfrican = job.country_code === "ZA" || /south africa/i.test(job.location || "");
