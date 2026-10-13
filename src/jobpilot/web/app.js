@@ -1,5 +1,5 @@
 const stages = ["Saved", "Tailored", "Applied", "Interviewing", "Offer"];
-const state = { jobs: [], profile: null, scores: {}, view: "overview", busy: false, user: null, remoteTracker: {} };
+const state = { jobs: [], profile: null, scores: {}, view: "overview", busy: false, user: null, remoteTracker: {}, matching: false, scoreFailures: 0 };
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 const localTracker = () => { try { return JSON.parse(localStorage.getItem("jobpilot-tracker") || "{}"); } catch { return {}; } };
@@ -44,9 +44,10 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#search-input").addEventListener("keydown", (event) => { if (event.key === "Enter") loadJobs(); });
   $("#location-filter").addEventListener("change", () => loadJobs());
   $("#remote-filter").addEventListener("change", () => loadJobs());
-  $("#upload-button").addEventListener("click", () => $("#cv-file").click());
-  $("#add-cv-link").addEventListener("click", () => $("#cv-file").click());
+  $("#upload-button").addEventListener("click", chooseCV);
+  $("#add-cv-link").addEventListener("click", chooseCV);
   $("#cv-file").addEventListener("change", (event) => uploadCV(event.target.files?.[0]));
+  $("#cv-file").addEventListener("cancel", () => setCvUploadStatus("No file selected. Choose a PDF or DOCX when you’re ready.", ""));
   $("#view-applications").addEventListener("click", showBoard);
   $("#back-to-jobs").addEventListener("click", showOverview);
   document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => {
@@ -195,10 +196,47 @@ function renderJobs() {
   if (!state.jobs.length) {
     const isInternships = state.view === "internships";
     list.innerHTML = '<div class="empty-state"><div class="empty-icon">✳</div><strong>' + (isInternships ? "No South African early career roles are in the feed yet." : "Your next opportunity will show up here.") + '</strong><p>' + (isInternships ? "This section needs a connected South African source. Add your Adzuna API keys in Render, then refresh the feed to import internships, graduate programmes and learnerships." : "The feed is ready. Run the daily job ingestion to bring in current South African and remote roles.") + '</p><button class="button button-secondary" onclick="loadJobs()">' + (isInternships ? "Refresh early career roles" : "Refresh feed") + '</button></div>';
+    renderRecommendations();
     return;
   }
   list.innerHTML = state.jobs.map(jobCard).join("");
-  list.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => handleJobAction(button.dataset.action, Number(button.dataset.jobId))));
+  bindJobActions(list);
+  renderRecommendations();
+}
+function bindJobActions(container) {
+  container.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => handleJobAction(button.dataset.action, Number(button.dataset.jobId))));
+}
+function renderRecommendations() {
+  const section = $("#profile-recommendations");
+  if (!section) return;
+  const shouldShow = !!state.profile;
+  section.classList.toggle("hidden", !shouldShow);
+  if (!shouldShow) return;
+  const list = $("#recommendation-list");
+  const ranked = state.jobs
+    .filter(job => state.scores[job.id] !== undefined)
+    .sort((a, b) => recommendationRank(b) - recommendationRank(a))
+    .slice(0, 6);
+  if (!ranked.length) {
+    const copy = state.matching
+      ? "Comparing your skills, education and experience with current roles…"
+      : state.scoreFailures
+        ? "We couldn’t analyze matches just now. You can keep browsing and try uploading your CV again."
+        : !state.jobs.length
+          ? "No current jobs match these filters. Clear the filters or check back when the feed updates."
+          : "Your profile is ready. We’re preparing role recommendations.";
+    list.innerHTML = `<div class="recommendation-status" role="status">${escapeHtml(copy)}</div>`;
+    return;
+  }
+  list.innerHTML = ranked.map(jobCard).join("");
+  bindJobActions(list);
+}
+function recommendationRank(job) {
+  const text = [job.title || "", job.employment_type, ...(job.tags || [])].filter(Boolean).join(" ");
+  let studentBoost = 0;
+  if (/\b(intern|internship|internships|graduate|graduates|grad|learnership|learnerships|trainee|trainees|apprentice|apprenticeship|student|entry.level|junior)\b/i.test(text)) studentBoost += 9;
+  if (/\b(data science|data|software|IT|information technology|technology|analytics|cyber|cloud|devops|engineering|programming|machine learning|QA tester|technical support)\b/i.test(text)) studentBoost += 4;
+  return state.scores[job.id] + studentBoost;
 }
 
 function isSouthAfricanEarlyCareer(job) {
@@ -210,9 +248,9 @@ function isSouthAfricanEarlyCareer(job) {
 function earlyCareerPriority(job) {
   const title = job.title || "";
   const tags = (job.tags || []).join(" ");
-  const focused = new RegExp("\\b(data science|data scientist|data analyst|business intelligence|bi analyst|software (developer|engineer)|web developer|application developer)\\b", "i");
+  const focused = new RegExp("\b(data science|data scientist|data analyst|business intelligence|bi analyst|software (developer|engineer)|web developer|application developer)\\b", "i");
   if (focused.test(title)) return 2;
-  const itIndustry = new RegExp("\\b(it|information technology|technology|software|data|analytics|cyber ?security|machine learning|artificial intelligence|ai|cloud|devops|network|database|systems analyst|qa tester|technical support)\\b", "i");
+  const itIndustry = new RegExp("\b(it|information technology|technology|software|data|analytics|cyber ?security|machine learning|artificial intelligence|ai|cloud|devops|network|database|systems analyst|qa tester|technical support)\\b", "i");
   return itIndustry.test(title) || itIndustry.test(tags) ? 1 : 0;
 }
 function jobCard(job) {
@@ -236,39 +274,82 @@ async function handleJobAction(action, id) {
   else if (action === "tailor") state.profile ? await tailorJob(job) : $("#cv-file").click();
 }
 
+function chooseCV() {
+  setCvUploadStatus("Choose a PDF or DOCX CV. JobPilot will analyze it for this session only.", "");
+  $("#cv-file").click();
+}
 async function uploadCV(file) {
-  if (!file) return;
-  if (file.size > 8 * 1024 * 1024) { toast("That file is over 8 MB. Choose a smaller CV."); return; }
-  const form = new FormData(); form.append("file", file);
-  toast("Reading your CV securely for this session…");
+  if (!file) {
+    setCvUploadStatus("Choose a PDF or DOCX CV to start your profile analysis.", "error");
+    return;
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    setCvUploadStatus("That file is over 8 MB. Choose a smaller CV.", "error");
+    const cvInput = $("#cv-file");
+    if (cvInput) cvInput.value = "";
+    return;
+  }
+  const form = new FormData();
+  form.append("file", file);
+  setCvUploadStatus("Uploading your CV securely for this session…", "working");
+  const uploadButton = $("#upload-button") || $("#replace-cv-button");
+  if (uploadButton) { uploadButton.disabled = true; uploadButton.textContent = "Analyzing…"; }
   try {
     const response = await api("/api/v1/cv/parse", {method:"POST", body:form});
     state.profile = await response.json();
+    state.scores = {};
+    state.scoreFailures = 0;
     $("#stat-cv").textContent = state.profile.name || "Ready to match";
     $("#user-name").textContent = state.profile.name || "Your workspace";
     $("#user-avatar").textContent = (state.profile.name || "Y").trim()[0].toUpperCase();
-    $("#cv-banner").innerHTML = `<div class="cv-graphic"><div class="orb orb-one"></div><div class="orb orb-two"></div><div class="cv-sheet"><span></span><span></span><span></span><i>✓</i></div></div><div class="cv-copy"><span class="banner-kicker">PROFILE READY · SESSION ONLY</span><h2>${escapeHtml(state.profile.name || "Your CV is ready to go.")}</h2><p>${(state.profile.skills || []).length} skills found. Your profile is in memory for this session and is not saved.</p></div><div class="cv-cta"><button class="button button-light" id="replace-cv-button">Replace CV <span>↗</span></button><span>PDF or DOCX · up to 8 MB</span></div>`;
-    $("#replace-cv-button").addEventListener("click", () => $("#cv-file").click());
-    state.scores = {};
-    renderJobs(); updateStats(); scoreVisibleJobs();
-    showProfileModal(); toast("Your CV is ready. You can review matches and tailor a role.");
-  } catch (error) { toast(error.message); }
-  $("#cv-file").value = "";
+    $("#cv-banner").innerHTML = `<div class="cv-graphic"><div class="orb orb-one"></div><div class="orb orb-two"></div><div class="cv-sheet"><span></span><span></span><span></span><i>✓</i></div></div><div class="cv-copy"><span class="banner-kicker">PROFILE READY · SESSION ONLY</span><h2>${escapeHtml(state.profile.name || "Your CV is ready to go.")}</h2><p>${(state.profile.skills || []).length} skills detected. We’ll rank student-friendly roles using your skills, education and experience. Your CV stays in this session only.</p></div><div class="cv-cta"><button class="button button-light" id="review-profile-button">Review profile</button><button class="button button-secondary" id="replace-cv-button">Replace CV</button><span>PDF or DOCX · up to 8 MB</span></div>`;
+    $("#review-profile-button").addEventListener("click", showProfileModal);
+    $("#replace-cv-button").addEventListener("click", chooseCV);
+    renderJobs();
+    updateStats();
+    setCvUploadStatus("CV received. Comparing your profile with the current job feed. Recommendations will appear below.", "success");
+    void scoreVisibleJobs();
+    toast("CV analyzed. Your suggested roles are being prepared.");
+  } catch (error) {
+    setCvUploadStatus(`We couldn’t read that CV: ${error.message}. Please try a PDF or DOCX under 8 MB.`, "error");
+    toast(error.message);
+  } finally {
+    if (uploadButton?.isConnected) {
+      uploadButton.disabled = false;
+      uploadButton.textContent = uploadButton.id === "upload-button" ? "Upload your CV ↗" : "Replace CV";
+    }
+    const cvInput = $("#cv-file");
+    if (cvInput) cvInput.value = "";
+  }
+}
+function setCvUploadStatus(message, tone = "") {
+  const status = $("#cv-upload-status");
+  if (!status) return;
+  status.textContent = message;
+  status.className = `cv-upload-status ${tone}`.trim();
+  status.classList.toggle("hidden", !message);
 }
 
 function showProfileModal() {
   const profile = state.profile;
   const skillChips = (profile.skills || []).map(skill => `<span class="keyword">${escapeHtml(skill)}</span>`).join("");
-  openModal(`<div class="modal-eyebrow">YOUR PROFILE · SESSION ONLY</div><h2 id="modal-title">${escapeHtml(profile.name || "CV profile")}</h2><p class="modal-subtitle">Take a moment to check the details we found. Your original CV remains unchanged.</p><div class="profile-panel"><h3>Contact</h3><p>${escapeHtml([profile.email,profile.phone].filter(Boolean).join(" · ") || "No contact details detected")}</p></div><div class="profile-panel"><h3>Professional summary</h3><p>${escapeHtml(profile.summary || "No summary section was detected.")}</p></div><div class="profile-panel"><h3>Skills detected</h3><div class="keyword-list">${skillChips || "No known skills detected. Check the CV format or use clear skill names."}</div></div><div class="review-note">${escapeHtml((profile.parser_notes || []).join(" "))}</div><div class="modal-actions"><button class="button button-primary" id="profile-done">Explore your matches</button><button class="button button-secondary" id="profile-close">Close</button></div>`);
+  const educationItems = (profile.education || []).map(item => `<span class="keyword">${escapeHtml(item)}</span>`).join("");
+  openModal(`<div class="modal-eyebrow">YOUR PROFILE · SESSION ONLY</div><h2 id="modal-title">${escapeHtml(profile.name || "CV profile")}</h2><p class="modal-subtitle">Take a moment to check the details we found. Your original CV remains unchanged.</p><div class="profile-panel"><h3>Contact</h3><p>${escapeHtml([profile.email,profile.phone].filter(Boolean).join(" · ") || "No contact details detected")}</p></div><div class="profile-panel"><h3>Professional summary</h3><p>${escapeHtml(profile.summary || "No summary section was detected.")}</p></div><div class="profile-panel"><h3>Education detected</h3><div class="keyword-list">${educationItems || "No education entries detected."}</div></div><div class="profile-panel"><h3>Skills detected</h3><div class="keyword-list">${skillChips || "Few known skills detected. Recommendations will rely more on the role title and education found in your CV."}</div></div><div class="review-note">${escapeHtml((profile.parser_notes || []).join(" "))}</div><div class="modal-actions"><button class="button button-primary" id="profile-done">Explore your matches</button><button class="button button-secondary" id="profile-close">Close</button></div>`);
   $("#profile-done").addEventListener("click", closeModal); $("#profile-close").addEventListener("click", closeModal);
 }
 
 async function scoreVisibleJobs() {
   if (!state.profile) return;
+  if (state.matching) return;
+  state.matching = true;
+  state.scoreFailures = 0;
+  renderRecommendations();
   const jobs = state.jobs.filter(job => state.scores[job.id] === undefined).slice(0, 60);
   let cursor = 0;
   const worker = async () => { while (cursor < jobs.length) { const job = jobs[cursor++]; await scoreJob(job, false); } };
   await Promise.all(Array.from({length:4}, worker));
+  state.matching = false;
+  renderRecommendations();
 }
 
 async function scoreJob(job, showResult) {
@@ -278,7 +359,11 @@ async function scoreJob(job, showResult) {
     const result = await response.json(); state.scores[job.id] = result.score;
     if (showResult) showMatch(job,result); else updateCardScore(job.id, result.score);
     updateStats();
-  } catch (error) { if (showResult) toast(error.message); }
+    renderRecommendations();
+  } catch (error) {
+    if (!showResult) state.scoreFailures += 1;
+    if (showResult) toast(error.message);
+  }
 }
 
 function showMatch(job, result) {
@@ -348,6 +433,7 @@ function showInternships() {
 function showOverview() {
   state.view="overview"; $("#location-filter").value=""; $("#remote-filter").value=""; $("#overview-view").classList.remove("hidden"); $("#applications-view").classList.add("hidden");
   $("#metric-grid").classList.remove("hidden"); $("#cv-banner").classList.remove("hidden"); $("#internships-note").classList.add("hidden");
+  $("#profile-recommendations").classList.toggle("hidden", !state.profile);
   $("#welcome-kicker").innerHTML = '<span class="spark">✳</span> YOUR NEXT MOVE STARTS HERE';
   $("#welcome-title").textContent = "Make your next move.";
   $("#welcome-subhead").textContent = "A clearer path from job search to signed offer.";
@@ -364,7 +450,7 @@ function renderBoard() {
 }
 
 function updateStats() { const data=tracker(), entries=Object.values(data); $("#stat-pipeline").textContent=entries.length; $("#application-count").textContent=entries.length; $("#stat-matches").textContent=Object.values(state.scores).filter(score=>score>=85).length; }
-function updateCardScore(jobId, score) { const actions=document.querySelector(`.job-card[data-job-id="${jobId}"] .job-actions`);if(!actions)return;let pill=actions.querySelector(".match-pill");if(!pill){pill=document.createElement("span");pill.className="match-pill";actions.prepend(pill);}pill.textContent=`${score}% match`;pill.classList.toggle("low",score<70); }
+function updateCardScore(jobId, score) { document.querySelectorAll(`.job-card[data-job-id="${jobId}"] .job-actions`).forEach(actions=>{let pill=actions.querySelector(".match-pill");if(!pill){pill=document.createElement("span");pill.className="match-pill";actions.prepend(pill);}pill.textContent=`${score}% match`;pill.classList.toggle("low",score<70);}); }
 function openModal(content) { $("#modal-content").innerHTML=content; $("#modal-backdrop").classList.remove("hidden"); document.body.style.overflow="hidden"; }
 function closeModal() { $("#modal-backdrop").classList.add("hidden"); document.body.style.overflow=""; }
 function toast(message) { const element=$("#toast");element.textContent=message;element.classList.add("visible");clearTimeout(toast.timer);toast.timer=setTimeout(()=>element.classList.remove("visible"),3600); }
