@@ -54,7 +54,9 @@ async function loadJobs() {
   try {
     const response = await api(`/api/v1/jobs?${params}`);
     const importedJobs = await response.json();
-    state.jobs = state.view === "internships" ? importedJobs.filter(isSouthAfricanEarlyCareer) : importedJobs;
+    state.jobs = state.view === "internships"
+      ? importedJobs.filter(isSouthAfricanEarlyCareer).sort((a, b) => earlyCareerPriority(b) - earlyCareerPriority(a))
+      : importedJobs;
     renderJobs();
     if (state.profile) scoreVisibleJobs();
   } catch (error) {
@@ -81,6 +83,14 @@ function isSouthAfricanEarlyCareer(job) {
   const earlyCareer = /\b(?:intern(?:ship)?s?|graduates?|grad|learnerships?|trainees?|apprenticeships?|vacation programmes?|vacation programs?|student programmes?|student programs?)\b/i.test(text);
   const southAfrican = job.country_code === "ZA" || /south africa/i.test(job.location || "");
   return earlyCareer && southAfrican;
+}
+function earlyCareerPriority(job) {
+  const title = job.title || "";
+  const tags = (job.tags || []).join(" ");
+  const focused = /\\b(data science|data scientist|data analyst|business intelligence|bi analyst|software (developer|engineer)|web developer|application developer)\\b/i;
+  if (focused.test(title)) return 2;
+  const itIndustry = /\\b(it|information technology|technology|software|data|analytics|cyber ?security|machine learning|artificial intelligence|\bai\b|cloud|devops|network|database|systems analyst|qa tester|technical support)\\b/i;
+  return itIndustry.test(title) || itIndustry.test(tags) ? 1 : 0;
 }
 function jobCard(job) {
   const id = Number(job.id), initials = (job.company || "?").split(/\s+/).map(x => x[0]).slice(0,2).join("").toUpperCase();
