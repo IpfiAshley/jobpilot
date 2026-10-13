@@ -19,7 +19,11 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#cv-file").addEventListener("change", (event) => uploadCV(event.target.files?.[0]));
   $("#view-applications").addEventListener("click", showBoard);
   $("#back-to-jobs").addEventListener("click", showOverview);
-  document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => button.dataset.view === "applications" ? showBoard() : showOverview()));
+  document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => {
+    if (button.dataset.view === "applications") showBoard();
+    else if (button.dataset.view === "internships") showInternships();
+    else showOverview();
+  }));
   $("#modal-close").addEventListener("click", closeModal);
   $("#modal-backdrop").addEventListener("click", (event) => { if (event.target.id === "modal-backdrop") closeModal(); });
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeModal(); });
@@ -39,13 +43,14 @@ async function api(path, options = {}) {
 async function loadJobs() {
   const list = $("#job-list");
   list.innerHTML = '<div class="loading-state"><span class="loader"></span>Finding roles worth your time…</div>';
-  const params = new URLSearchParams({limit:"60"});
+  const params = new URLSearchParams({limit:"100"});
   const query = $("#search-input").value.trim();
   const location = $("#location-filter").value;
   const remote = $("#remote-filter").value;
   if (query) params.set("q", query);
   if (location) params.set("location", location);
   if (remote) params.set("remote", remote);
+  if (state.view === "internships") params.set("internship_only", "true");
   try {
     const response = await api(`/api/v1/jobs?${params}`);
     state.jobs = await response.json();
@@ -62,7 +67,8 @@ function renderJobs() {
   $("#results-count").textContent = `${state.jobs.length} ${state.jobs.length === 1 ? "role" : "roles"}`;
   $("#stat-jobs").textContent = state.jobs.length.toLocaleString();
   if (!state.jobs.length) {
-    list.innerHTML = '<div class="empty-state"><div class="empty-icon">✳</div><strong>Your next opportunity will show up here.</strong><p>The feed is ready. Run the daily job ingestion to bring in current South African and remote roles.</p><button class="button button-secondary" onclick="loadJobs()">Refresh feed</button></div>';
+    const isInternships = state.view === "internships";
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">✳</div><strong>' + (isInternships ? "No internships in the feed yet." : "Your next opportunity will show up here.") + '</strong><p>' + (isInternships ? "New internship listings will appear here after the next feed refresh." : "The feed is ready. Run the daily job ingestion to bring in current South African and remote roles.") + '</p><button class="button button-secondary" onclick="loadJobs()">' + (isInternships ? "Refresh internships" : "Refresh feed") + '</button></div>';
     return;
   }
   list.innerHTML = state.jobs.map(jobCard).join("");
@@ -180,9 +186,32 @@ function showBoard() {
   $("#breadcrumb-current").textContent="Applications"; document.querySelectorAll(".nav-item").forEach(button=>button.classList.toggle("active",button.dataset.view==="applications"));
   renderBoard();
 }
+function showInternships() {
+  state.view = "internships";
+  $("#overview-view").classList.remove("hidden");
+  $("#applications-view").classList.add("hidden");
+  $("#metric-grid").classList.add("hidden");
+  $("#cv-banner").classList.add("hidden");
+  $("#internships-note").classList.remove("hidden");
+  $("#breadcrumb-current").textContent = "Internships";
+  $("#welcome-kicker").textContent = "EARLY CAREER OPPORTUNITIES";
+  $("#welcome-title").textContent = "Start your career here.";
+  $("#welcome-subhead").textContent = "Find internships and build experience that moves you forward.";
+  $("#feed-kicker").textContent = "INTERNSHIP OPPORTUNITIES";
+  $("#feed-title").textContent = "Internships";
+  document.querySelectorAll(".nav-item").forEach(button => button.classList.toggle("active", button.dataset.view === "internships"));
+  loadJobs();
+}
 function showOverview() {
   state.view="overview"; $("#overview-view").classList.remove("hidden"); $("#applications-view").classList.add("hidden");
+  $("#metric-grid").classList.remove("hidden"); $("#cv-banner").classList.remove("hidden"); $("#internships-note").classList.add("hidden");
+  $("#welcome-kicker").innerHTML = '<span class="spark">✳</span> YOUR NEXT MOVE STARTS HERE';
+  $("#welcome-title").textContent = "Make your next move.";
+  $("#welcome-subhead").textContent = "A clearer path from job search to signed offer.";
+  $("#feed-kicker").textContent = "CURATED FOR YOUR NEXT CHAPTER";
+  $("#feed-title").textContent = "Explore opportunities";
   $("#breadcrumb-current").textContent="Overview"; document.querySelectorAll(".nav-item").forEach(button=>button.classList.toggle("active",button.dataset.view==="overview"));
+  loadJobs();
 }
 function renderBoard() {
   const data=tracker(), entries=Object.entries(data); $("#application-count").textContent=entries.length; $("#board-summary").innerHTML=stages.map(stage=>`<div class="board-summary-item">${escapeHtml(stage)}<strong>${entries.filter(([,item])=>item.stage===stage).length}</strong></div>`).join("");

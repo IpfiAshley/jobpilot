@@ -1,12 +1,13 @@
 from contextlib import asynccontextmanager
 import hmac
+import re
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
+from sqlalchemy import String, cast, or_, select
 
 from jobpilot.ai.tailoring import TailoringError, TailoringService
 from jobpilot.core.config import get_settings
@@ -69,6 +70,7 @@ def list_jobs(
     q: str | None = Query(default=None, max_length=120),
     location: str | None = Query(default=None, max_length=120),
     remote: bool | None = None,
+    internship_only: bool = False,
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> list[JobRead]:
@@ -80,6 +82,25 @@ def list_jobs(
             statement = statement.where(Job.location.ilike(f"%{location}%"))
         if remote is not None:
             statement = statement.where(Job.is_remote.is_(remote))
+        if internship_only:
+            statement = statement.where(
+                or_(
+                    Job.title.ilike("%intern%"),
+                    Job.employment_type.ilike("%intern%"),
+                    cast(Job.tags, String).ilike("%intern%"),
+                )
+            )
+            candidates = db.scalars(
+                statement.order_by(Job.published_at.desc().nullslast(), Job.first_seen_at.desc())
+            ).all()
+            word = re.compile(r"\bintern(?:ship)?s?\b", re.IGNORECASE)
+            rows = [
+                row for row in candidates
+                if word.search(row.title or "")
+                or word.search(row.employment_type or "")
+                or any(word.search(str(tag)) for tag in (row.tags or []))
+            ][offset : offset + limit]
+            return [JobRead.model_validate(row) for row in rows]
         rows = db.scalars(statement.offset(offset).limit(limit)).all()
         return [JobRead.model_validate(row) for row in rows]
 
