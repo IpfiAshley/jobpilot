@@ -176,9 +176,24 @@ async function loadJobs() {
   if (remote) params.set("remote", remote);
   if (state.view === "internships") params.set("early_career_only", "true");
   try {
-    const response = await api(`/api/v1/jobs?${params}`);
-    const importedJobs = await response.json();
-    const preferredLanding = state.view === "overview" && !location && remote !== "false";
+    const preferredLanding = state.view === "overview" && !location && !remote;
+    let importedJobs;
+    if (preferredLanding) {
+      const southAfricaParams = new URLSearchParams(params);
+      southAfricaParams.set("location", "South Africa");
+      const remoteParams = new URLSearchParams(params);
+      remoteParams.set("remote", "true");
+      const [southAfricaResponse, remoteResponse] = await Promise.all([
+        api(`/api/v1/jobs?${southAfricaParams}`),
+        api(`/api/v1/jobs?${remoteParams}`),
+      ]);
+      const [southAfricaJobs, remoteJobs] = await Promise.all([southAfricaResponse.json(), remoteResponse.json()]);
+      const uniqueJobs = new Map([...southAfricaJobs, ...remoteJobs].map(job => [job.id, job]));
+      importedJobs = [...uniqueJobs.values()];
+    } else {
+      const response = await api(`/api/v1/jobs?${params}`);
+      importedJobs = await response.json();
+    }
     state.jobs = state.view === "internships"
       ? importedJobs.filter(isSouthAfricanEarlyCareer).sort((a, b) => earlyCareerPriority(b) - earlyCareerPriority(a))
       : preferredLanding
