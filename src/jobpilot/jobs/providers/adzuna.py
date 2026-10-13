@@ -24,22 +24,34 @@ class AdzunaSource:
             logger.info("Skipping Adzuna: API credentials are not configured")
             return []
         output: list[JobListing] = []
-        for page in range(1, max(1, self.settings.adzuna_max_pages) + 1):
-            response = self.client.get(
-                self.endpoint.format(page=page),
-                params={
-                    "app_id": self.settings.adzuna_app_id,
-                    "app_key": self.settings.adzuna_app_key,
-                    "results_per_page": min(max(self.settings.adzuna_results_per_query, 1), 50),
-                    "content-type": "application/json",
-                },
-            )
-            response.raise_for_status()
-            payload = response.json()
-            results = payload.get("results", [])
-            if not results:
-                break
-            output.extend(self._convert(item) for item in results)
+        search_terms = (
+            "internship",
+            "graduate programme",
+            "graduate program",
+            "graduate internship",
+            "learnership",
+            "trainee programme",
+        )
+        page_limit = max(1, self.settings.adzuna_max_pages)
+        results_per_page = min(max(self.settings.adzuna_results_per_query, 1), 50)
+        for term in search_terms:
+            for page in range(1, page_limit + 1):
+                response = self.client.get(
+                    self.endpoint.format(page=page),
+                    params={
+                        "app_id": self.settings.adzuna_app_id,
+                        "app_key": self.settings.adzuna_app_key,
+                        "results_per_page": results_per_page,
+                        "what": term,
+                        "sort_by": "date",
+                        "content-type": "application/json",
+                    },
+                )
+                response.raise_for_status()
+                results = response.json().get("results", [])
+                if not results:
+                    break
+                output.extend(self._convert(item) for item in results)
         return output
 
     def _convert(self, item: dict) -> JobListing:
