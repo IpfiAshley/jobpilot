@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
+import hmac
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
@@ -13,6 +14,7 @@ from jobpilot.cv.export import export_docx, export_pdf
 from jobpilot.cv.matcher import match_cv_to_job
 from jobpilot.cv.parser import CVParseError, parse_cv
 from jobpilot.db.session import SessionLocal, create_schema
+from jobpilot.jobs.service import configured_sources, ingest_sources
 from jobpilot.models.job import Job
 from jobpilot.schemas import JobRead
 from jobpilot.schemas_cv import ExportRequest, MatchRequest, TailorRequest
@@ -38,6 +40,28 @@ def dashboard() -> FileResponse:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/api/v1/admin/ingest")
+def run_ingestion(authorization: str | None = Header(default=None)) -> dict:
+    settings = get_settings()
+    if not settings.ingestion_token:
+        raise HTTPException(status_code=503, detail="Scheduled ingestion is not configured")
+    expected = f"Bearer {settings.ingestion_token}"
+    if not hmac.compare_digest(authorization or "", expected):
+        raise HTTPException(status_code=401, detail="Invalid ingestion credentials")
+
+    sources = configured_sources(settings)
+    with SessionLocal() as db:
+        summary = ingest_sources(db, sources)
+    return {
+        "fetched": summary.fetched,
+        "inserted": summary.inserted,
+        "updated": summary.updated,
+        "skipped": summary.skipped,
+        "source_errors": sorted((summary.source_errors or {}).keys()),
+        "adzuna_configured": bool(settings.adzuna_app_id and settings.adzuna_app_key),
+    }
 
 
 @app.get("/api/v1/jobs", response_model=list[JobRead])
@@ -122,3 +146,4 @@ def export_tailored_cv(request: ExportRequest) -> Response:
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="tailored-cv.{extension}"'},
     )
+

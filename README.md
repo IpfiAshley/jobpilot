@@ -1,14 +1,15 @@
-# SA Tech Jobs & CV Matching — Phase 1 + 2
+# JobPilot — South African & Remote Job Search
 
-Phase 1 provides job ingestion and CV-to-job matching. Phase 2 adds a dark dashboard, AI tailoring, cover-letter drafting, and DOCX/PDF export. The service deliberately uses documented public APIs or operator-configured RSS feeds. It does not scrape login-gated sites such as LinkedIn or bypass site access controls. Add source adapters only where the source permits automated collection.
+JobPilot aggregates available job listings from documented public APIs and operator-configured RSS feeds, with CV matching, application tracking, optional AI tailoring, cover-letter drafting, and DOCX/PDF export. Source coverage depends on each provider's data and access rules. The service does not scrape login-gated sites such as LinkedIn or bypass site controls.
 
 ## Architecture
 
 ```text
-GitHub Actions (daily) ──> scripts/run_ingestion.py ──> source adapters
-                                                       ├─ Adzuna ZA API
-                                                       ├─ RemoteOK public feed
-                                                       └─ configured RSS feeds
+GitHub Actions (daily) ──> protected Render ingestion endpoint ──> source adapters
+                                                                  ├─ Adzuna ZA API (all sectors; API credentials needed)
+                                                                  ├─ Jobicy public remote jobs API
+                                                                  ├─ Remote OK public remote jobs feed
+                                                                  └─ configured RSS feeds
                                                                │
                                                                v
                                                      normalize + deduplicate
@@ -48,7 +49,7 @@ CV PDF/DOCX ──> parser ──> structured profile ──> TF-IDF / cosine ma
 
 Python 3.11–3.13 is recommended. Create a virtual environment, install with `pip install -e .`, copy `.env.example` to `.env`, and set the API credentials / RSS URLs you have permission to use. The SQLite database defaults to `./data/jobpilot.db` and is created on first run.
 
-Run `python scripts/run_ingestion.py` for one ingestion pass, or `uvicorn jobpilot.main:app --reload` for the API and dashboard at `http://localhost:8000`. The GitHub Actions workflow runs ingestion daily at 04:15 UTC and can also be run manually. Add `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` as repository secrets to enable Adzuna.
+Run `python scripts/run_ingestion.py` for one ingestion pass, or `uvicorn jobpilot.main:app --reload` for the API and dashboard at `http://localhost:8000`. The GitHub Actions workflow calls the protected Render ingestion endpoint daily at 04:15 UTC and can also be run manually. Add `INGESTION_TOKEN` on Render and the matching `JOBPILOT_INGESTION_TOKEN` GitHub Actions secret. Add `ADZUNA_APP_ID` and `ADZUNA_APP_KEY` to Render to enable broad South African listings from Adzuna. Configure `RSS_FEED_URLS` for additional permitted feeds.
 
 ### CV matching library
 
@@ -72,12 +73,12 @@ Available endpoints include `POST /api/v1/cv/parse`, `POST /api/v1/cv/match`, `P
 
 ### Hosted preview
 
-`render.yaml` defines a Render Docker web service with a `/health` check. Commit this project directory to a Git repository, connect that repository in Render, and create a Blueprint from `render.yaml`. The preview uses an ephemeral SQLite database, has no job-source or LLM credentials configured, and is intended to show the interface only. Do not upload a real CV to a public preview; configure access controls before using personal data.
+`render.yaml` defines the Render Docker web service and `/health` check. The current preview uses a temporary free Render Postgres database and has no Adzuna credentials configured yet. Free Render Postgres expires 30 days after creation. Do not upload a real CV to a public preview; configure access controls before using personal data.
 
 ## Data source / coverage notes
 
-- Adzuna is queried for South Africa through its official API. Configure a valid key and observe its current API terms and rate limits.
-- RemoteOK's public feed is included for globally remote listings. The source does not reliably prove that every employer accepts South African applicants; listings are labeled `eligibility_unverified` unless region evidence is present. Users should confirm before applying.
+- Adzuna is queried for South Africa through its official API. Configure a valid key and observe current API terms and rate limits. Without credentials, local South African listings will be limited.
+- Remote OK and Jobicy provide public remote feeds. Jobicy's public feed contains recent listings and should be linked to its original listing URL. These feeds do not prove that every employer accepts South African applicants; listings are labeled `eligibility_unverified` unless region evidence is present. Confirm eligibility before applying.
 - RSS feeds can be configured in `RSS_FEED_URLS` for sources whose feed terms allow ingestion.
 - OfferZen, PNet, CareerJunction, and LinkedIn are not scraped in this phase. Use their official APIs/feeds or written authorization before adding adapters.
 

@@ -30,8 +30,6 @@ class RemoteOKSource:
                 continue  # first feed element is attribution metadata
             tags = item.get("tags") or []
             title = item.get("position", "")
-            if not _is_tech(title, tags):
-                continue
             location = item.get("location") or "Worldwide"
             location_l = location.lower()
             region_evidence = any(term in location_l for term in ("south africa", "africa", "worldwide", "anywhere"))
@@ -68,10 +66,3 @@ def _salary(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
 
-
-def _is_tech(title: str, tags: list[object]) -> bool:
-    text = " ".join([title, *(str(tag) for tag in tags)]).lower()
-    return any(term in text for term in (
-        "software", "developer", "engineer", "data", "business intelligence", "analyst",
-        "cloud", "devops", "security", "cyber", "database", "machine learning", "ai",
-    ))

@@ -8,6 +8,7 @@ from jobpilot.core.config import Settings
 from jobpilot.jobs.base import JobListing, JobSource
 from jobpilot.jobs.normalize import fingerprint, normalize_listing
 from jobpilot.jobs.providers.adzuna import AdzunaSource
+from jobpilot.jobs.providers.jobicy import JobicySource
 from jobpilot.jobs.providers.remoteok import RemoteOKSource
 from jobpilot.jobs.providers.rss import RSSSource
 from jobpilot.models.job import Job, utc_now
@@ -25,7 +26,12 @@ class IngestionSummary:
 
 
 def configured_sources(settings: Settings) -> list[JobSource]:
-    return [AdzunaSource(settings), RemoteOKSource(settings), RSSSource(settings, settings.rss_urls)]
+    return [
+        AdzunaSource(settings),
+        JobicySource(settings),
+        RemoteOKSource(settings),
+        RSSSource(settings, settings.rss_urls),
+    ]
 
 
 def ingest_sources(db: Session, sources: list[JobSource]) -> IngestionSummary:
@@ -90,3 +96,4 @@ def _refresh(job: Job, item: JobListing, now) -> None:
             setattr(job, attr, value)
     job.last_seen_at = now
     job.updated_at = now
+

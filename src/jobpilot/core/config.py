@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     adzuna_results_per_query: int = 50
     adzuna_max_pages: int = 2
     rss_feed_urls: str = ""
+    ingestion_token: str = ""
     http_timeout_seconds: float = 20.0
     user_agent: str = "JobPilot/0.1 (+contact: admin@example.com)"
     llm_api_key: str = ""
@@ -27,3 +28,4 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
