@@ -50,7 +50,7 @@ async function loadJobs() {
   if (query) params.set("q", query);
   if (location) params.set("location", location);
   if (remote) params.set("remote", remote);
-  if (state.view === "internships") params.set("internship_only", "true");
+  if (state.view === "internships") params.set("early_career_only", "true");
   try {
     const response = await api(`/api/v1/jobs?${params}`);
     state.jobs = await response.json();
@@ -68,7 +68,7 @@ function renderJobs() {
   $("#stat-jobs").textContent = state.jobs.length.toLocaleString();
   if (!state.jobs.length) {
     const isInternships = state.view === "internships";
-    list.innerHTML = '<div class="empty-state"><div class="empty-icon">✳</div><strong>' + (isInternships ? "No internships in the feed yet." : "Your next opportunity will show up here.") + '</strong><p>' + (isInternships ? "New internship listings will appear here after the next feed refresh." : "The feed is ready. Run the daily job ingestion to bring in current South African and remote roles.") + '</p><button class="button button-secondary" onclick="loadJobs()">' + (isInternships ? "Refresh internships" : "Refresh feed") + '</button></div>';
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">✳</div><strong>' + (isInternships ? "No South African early career roles are in the feed yet." : "Your next opportunity will show up here.") + '</strong><p>' + (isInternships ? "This section needs a connected South African source. Add your Adzuna API keys in Render, then refresh the feed to import internships, graduate programmes and learnerships." : "The feed is ready. Run the daily job ingestion to bring in current South African and remote roles.") + '</p><button class="button button-secondary" onclick="loadJobs()">' + (isInternships ? "Refresh early career roles" : "Refresh feed") + '</button></div>';
     return;
   }
   list.innerHTML = state.jobs.map(jobCard).join("");
@@ -193,17 +193,20 @@ function showInternships() {
   $("#metric-grid").classList.add("hidden");
   $("#cv-banner").classList.add("hidden");
   $("#internships-note").classList.remove("hidden");
-  $("#breadcrumb-current").textContent = "Internships";
+  $("#breadcrumb-current").textContent = "SA Internships & Graduates";
+  $("#search-input").value = "";
+  $("#location-filter").value = "South Africa";
+  $("#remote-filter").value = "";
   $("#welcome-kicker").textContent = "EARLY CAREER OPPORTUNITIES";
   $("#welcome-title").textContent = "Start your career here.";
-  $("#welcome-subhead").textContent = "Find internships and build experience that moves you forward.";
-  $("#feed-kicker").textContent = "INTERNSHIP OPPORTUNITIES";
-  $("#feed-title").textContent = "Internships";
+  $("#welcome-subhead").textContent = "Explore South African internships, graduate programmes and learnerships.";
+  $("#feed-kicker").textContent = "SOUTH AFRICAN EARLY CAREER ROLES";
+  $("#feed-title").textContent = "Internships & graduate programmes";
   document.querySelectorAll(".nav-item").forEach(button => button.classList.toggle("active", button.dataset.view === "internships"));
   loadJobs();
 }
 function showOverview() {
-  state.view="overview"; $("#overview-view").classList.remove("hidden"); $("#applications-view").classList.add("hidden");
+  state.view="overview"; $("#location-filter").value=""; $("#remote-filter").value=""; $("#overview-view").classList.remove("hidden"); $("#applications-view").classList.add("hidden");
   $("#metric-grid").classList.remove("hidden"); $("#cv-banner").classList.remove("hidden"); $("#internships-note").classList.add("hidden");
   $("#welcome-kicker").innerHTML = '<span class="spark">✳</span> YOUR NEXT MOVE STARTS HERE';
   $("#welcome-title").textContent = "Make your next move.";
