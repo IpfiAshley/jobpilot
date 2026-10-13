@@ -53,7 +53,8 @@ async function loadJobs() {
   if (state.view === "internships") params.set("early_career_only", "true");
   try {
     const response = await api(`/api/v1/jobs?${params}`);
-    state.jobs = await response.json();
+    const importedJobs = await response.json();
+    state.jobs = state.view === "internships" ? importedJobs.filter(isSouthAfricanEarlyCareer) : importedJobs;
     renderJobs();
     if (state.profile) scoreVisibleJobs();
   } catch (error) {
@@ -75,6 +76,12 @@ function renderJobs() {
   list.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => handleJobAction(button.dataset.action, Number(button.dataset.jobId))));
 }
 
+function isSouthAfricanEarlyCareer(job) {
+  const text = [job.title, job.employment_type, ...(job.tags || [])].filter(Boolean).join(" ");
+  const earlyCareer = /\b(?:intern(?:ship)?s?|graduates?|grad|learnerships?|trainees?|apprenticeships?|vacation programmes?|vacation programs?|student programmes?|student programs?)\b/i.test(text);
+  const southAfrican = job.country_code === "ZA" || /south africa/i.test(job.location || "");
+  return earlyCareer && southAfrican;
+}
 function jobCard(job) {
   const id = Number(job.id), initials = (job.company || "?").split(/\s+/).map(x => x[0]).slice(0,2).join("").toUpperCase();
   const tags = (job.tags || []).slice(0,4).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join("");
