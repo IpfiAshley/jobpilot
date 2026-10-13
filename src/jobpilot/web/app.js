@@ -1,5 +1,5 @@
 const stages = ["Saved", "Tailored", "Applied", "Interviewing", "Offer"];
-const state = { jobs: [], profile: null, scores: {}, view: "overview", busy: false, user: null, remoteTracker: {}, matching: false, scoreFailures: 0 };
+const state = { jobs: [], profile: null, scores: {}, view: "overview", busy: false, user: null, remoteTracker: {}, matching: false, scoreFailures: 0, selectedJobId: null };
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 const localTracker = () => { try { return JSON.parse(localStorage.getItem("jobpilot-tracker") || "{}"); } catch { return {}; } };
@@ -229,11 +229,14 @@ function renderJobs() {
   if (!state.jobs.length) {
     const isInternships = state.view === "internships";
     list.innerHTML = '<div class="empty-state"><div class="empty-icon">✳</div><strong>' + (isInternships ? "No South African early career roles are in the feed yet." : "Your next opportunity will show up here.") + '</strong><p>' + (isInternships ? "This section needs a connected South African source. Add your Adzuna API keys in Render, then refresh the feed to import internships, graduate programmes and learnerships." : "The feed is ready. Run the daily job ingestion to bring in current South African and remote roles.") + '</p><button class="button button-secondary" onclick="loadJobs()">' + (isInternships ? "Refresh early career roles" : "Refresh feed") + '</button></div>';
+    renderJobDetail();
     renderRecommendations();
     return;
   }
+  if (!state.jobs.some(job => Number(job.id) === Number(state.selectedJobId))) state.selectedJobId = Number(state.jobs[0].id);
   list.innerHTML = state.jobs.map(jobCard).join("");
-  bindJobActions(list);
+  bindJobSelection(list);
+  renderJobDetail();
   renderRecommendations();
 }
 function bindJobActions(container) {
@@ -262,7 +265,7 @@ function renderRecommendations() {
     return;
   }
   list.innerHTML = ranked.map(jobCard).join("");
-  bindJobActions(list);
+  bindJobSelection(list);
 }
 function recommendationRank(job) {
   const text = [job.title || "", job.employment_type, ...(job.tags || [])].filter(Boolean).join(" ");
@@ -317,13 +320,55 @@ function earlyCareerPriority(job) {
   return isITRole(job) ? 1 : 0;
 }
 function jobCard(job) {
-  const id = Number(job.id), initials = (job.company || "?").split(/\s+/).map(x => x[0]).slice(0,2).join("").toUpperCase();
-  const tags = (job.tags || []).slice(0,4).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join("");
-  const tracked = tracker()[id];
+  const id = Number(job.id);
   const score = state.scores[id];
-  const posted = job.published_at ? timeAgo(job.published_at) : "Recently added";
-  const sourceName = job.source === "jobicy" ? "Jobicy" : job.source === "remoteok" ? "Remote OK" : job.source === "adzuna_za" ? "Adzuna" : job.source;
-  return `<article class="job-card" data-job-id="${id}"><div class="job-main"><div class="job-company-row"><span class="company-logo">${escapeHtml(initials)}</span><span class="job-company">${escapeHtml(job.company || "Unknown company")}</span><span class="job-posted">${escapeHtml(posted)}</span></div><div class="job-source">Source: <a href="${escapeHtml(safeUrl(job.url))}" target="_blank" rel="noopener noreferrer">${escapeHtml(sourceName)}</a></div><h3 class="job-title">${escapeHtml(job.title)}</h3><div class="job-meta"><span>⌖ &nbsp;${escapeHtml(job.location || "Location not specified")}</span><span class="meta-sep">·</span><span>${job.is_remote ? "Remote" : escapeHtml(job.employment_type || "Full-time")}</span>${job.salary_min || job.salary_max ? `<span class="meta-sep">·</span><span>${escapeHtml(formatSalary(job))}</span>` : ""}</div><div class="job-tags">${job.is_remote ? '<span class="tag remote">Remote</span>' : ""}${tags}</div>${job.eligibility === "eligibility_unverified" ? '<div class="eligibility">Confirm South African applicant eligibility with the employer.</div>' : ""}</div><div class="job-actions">${score !== undefined ? `<span class="match-pill ${score > 80 ? "" : score >= 50 && score <= 79 ? "medium" : "low"}">${score}% match</span>` : state.profile ? '<span class="match-pill low">Scoring…</span>' : ""}<div class="job-action-row">${state.profile ? `<button class="button button-small button-secondary" data-action="match" data-job-id="${id}">Match</button>` : ""}<button class="button button-small ${state.profile ? "button-primary" : "button-secondary"}" data-action="tailor" data-job-id="${id}" ${state.profile ? "" : "title=\"Add your CV first\""}>Tailor</button></div><div class="job-action-row"><button class="button button-small button-save ${tracked ? "saved" : ""}" data-action="${tracked ? "untrack" : "save"}" data-job-id="${id}">${tracked ? escapeHtml(tracked.stage) : "＋ Save role"}</button><a class="button button-small button-secondary" href="${escapeHtml(safeUrl(job.url))}" target="_blank" rel="noopener noreferrer">View role ↗</a></div></div></article>`;
+  const company = escapeHtml(job.company || "Unknown company");
+  const location = escapeHtml(job.location || "Location not specified");
+  const scoreClass = score > 80 ? "" : score >= 50 && score <= 79 ? "medium" : "low";
+  return `<button type="button" class="job-list-card" data-job-id="${id}" aria-pressed="${id === state.selectedJobId}">
+    <span class="job-list-title-row"><span class="job-list-title">${escapeHtml(job.title || "Untitled role")}</span><span class="match-pill ${score === undefined ? "low" : scoreClass}">${score === undefined ? "—" : score + "% match"}</span></span>
+    <span class="job-list-company">${company}</span>
+    <span class="job-list-location">${location}</span>
+  </button>`;
+}
+function bindJobSelection(container) {
+  container.querySelectorAll(".job-list-card").forEach(card => {
+    card.addEventListener("click", () => {
+      state.selectedJobId = Number(card.dataset.jobId);
+      document.querySelectorAll(".job-list-card").forEach(item => {
+        const selected = Number(item.dataset.jobId) === state.selectedJobId;
+        item.classList.toggle("selected", selected);
+        item.setAttribute("aria-pressed", String(selected));
+      });
+      renderJobDetail();
+    });
+  });
+}
+function renderJobDetail() {
+  const panel = $("#job-detail");
+  if (!panel) return;
+  const job = state.jobs.find(item => Number(item.id) === Number(state.selectedJobId));
+  if (!job) {
+    panel.innerHTML = '<div class="job-detail-empty">Choose a role from the list to see the full description and application actions.</div>';
+    return;
+  }
+  const id = Number(job.id), score = state.scores[id], tracked = tracker()[id];
+  const initials = (job.company || "?").split(/\s+/).map(value => value[0]).slice(0,2).join("").toUpperCase();
+  const sourceName = job.source === "jobicy" ? "Jobicy" : job.source === "remoteok" ? "Remote OK" : job.source === "adzuna_za" ? "Adzuna" : job.source || "Job board";
+  const tags = (job.tags || []).slice(0,12).map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join("");
+  const requirements = Array.isArray(job.requirements) ? job.requirements.filter(Boolean) : [];
+  const requirementsHtml = requirements.length ? `<section class="detail-section"><h3>Requirements</h3><ul>${requirements.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>` : "";
+  const salary = job.salary_min || job.salary_max ? `<span>${escapeHtml(formatSalary(job))}</span>` : "";
+  const match = score === undefined ? "" : `<span class="match-pill ${score > 80 ? "" : score >= 50 && score <= 79 ? "medium" : "low"}">${score}% match</span>`;
+  const eligibility = job.eligibility === "eligibility_unverified" ? '<p class="detail-eligibility">Confirm South African applicant eligibility with the employer.</p>' : "";
+  panel.innerHTML = `<div class="detail-topline"><span class="company-logo">${escapeHtml(initials)}</span><div class="detail-company"><strong>${escapeHtml(job.company || "Unknown company")}</strong><span>${escapeHtml(sourceName)} · ${escapeHtml(job.published_at ? timeAgo(job.published_at) : "Recently added")}</span></div>${match}</div>
+    <h2 class="detail-title">${escapeHtml(job.title || "Untitled role")}</h2>
+    <div class="detail-meta"><span>${escapeHtml(job.location || "Location not specified")}</span><span>${job.is_remote ? "Remote" : escapeHtml(job.employment_type || "Full-time")}</span>${salary}</div>
+    <div class="detail-actions">${state.profile ? `<button class="button button-small button-secondary" data-action="match" data-job-id="${id}">Check match</button>` : ""}<button class="button button-small button-save ${tracked ? "saved" : ""}" data-action="${tracked ? "untrack" : "save"}" data-job-id="${id}">${tracked ? escapeHtml(tracked.stage) : "Save role"}</button><button class="button button-small button-primary" data-action="tailor" data-job-id="${id}">${state.profile ? "Tailor CV" : "Add CV to tailor"}</button><a class="button button-small button-secondary" href="${escapeHtml(safeUrl(job.url))}" target="_blank" rel="noopener noreferrer">Apply ↗</a></div>
+    <section class="detail-section"><h3>About this role</h3><div class="detail-description">${escapeHtml(job.description || "The employer has not included a full description. Open the original listing for more details.")}</div></section>
+    ${tags ? `<section class="detail-section"><h3>Skills &amp; topics</h3><div class="job-tags">${job.is_remote ? '<span class="tag remote">Remote</span>' : ""}${tags}</div></section>` : ""}
+    ${requirementsHtml}${eligibility}`;
+  bindJobActions(panel);
 }
 
 async function handleJobAction(action, id) {
@@ -420,6 +465,7 @@ async function scoreJob(job, showResult) {
   try {
     const response = await api("/api/v1/cv/match", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profile:state.profile,job_title:job.title,job_description:job.description || ""})});
     const result = await response.json(); state.scores[job.id] = result.score;
+    renderJobDetail();
     if (showResult) showMatch(job,result); else updateCardScore(job.id, result.score);
     updateStats();
     renderRecommendations();
@@ -529,7 +575,14 @@ function renderBoard() {
 }
 
 function updateStats() { const data=tracker(), entries=Object.values(data); $("#stat-pipeline").textContent=entries.length; $("#application-count").textContent=entries.length; $("#stat-matches").textContent=Object.values(state.scores).filter(score=>score>=85).length; }
-function updateCardScore(jobId, score) { document.querySelectorAll(`.job-card[data-job-id="${jobId}"] .job-actions`).forEach(actions=>{let pill=actions.querySelector(".match-pill");if(!pill){pill=document.createElement("span");pill.className="match-pill";actions.prepend(pill);}pill.textContent=`${score}% match`;pill.classList.toggle("low",score<50);pill.classList.toggle("medium",score>=50&&score<=79);}); }
+function updateCardScore(jobId, score) {
+  document.querySelectorAll(`.job-list-card[data-job-id="${jobId}"] .match-pill`).forEach(pill => {
+    pill.textContent = `${score}% match`;
+    pill.classList.toggle("medium", score >= 50 && score <= 79);
+    pill.classList.toggle("low", score < 50 || score === 80);
+  });
+  renderJobDetail();
+}
 function openModal(content) { $("#modal-content").innerHTML=content; $("#modal-backdrop").classList.remove("hidden"); document.body.style.overflow="hidden"; }
 function closeModal() { $("#modal-backdrop").classList.add("hidden"); document.body.style.overflow=""; }
 function toast(message) { const element=$("#toast");element.textContent=message;element.classList.add("visible");clearTimeout(toast.timer);toast.timer=setTimeout(()=>element.classList.remove("visible"),3600); }
