@@ -178,9 +178,12 @@ async function loadJobs() {
   try {
     const response = await api(`/api/v1/jobs?${params}`);
     const importedJobs = await response.json();
+    const preferredLanding = state.view === "overview" && !location && remote !== "false";
     state.jobs = state.view === "internships"
       ? importedJobs.filter(isSouthAfricanEarlyCareer).sort((a, b) => earlyCareerPriority(b) - earlyCareerPriority(a))
-      : importedJobs;
+      : preferredLanding
+        ? interleaveLandingJobs(importedJobs.filter(isPreferredLandingRole))
+        : importedJobs;
     renderJobs();
     if (state.profile) scoreVisibleJobs();
   } catch (error) {
@@ -239,6 +242,40 @@ function recommendationRank(job) {
   return state.scores[job.id] + studentBoost;
 }
 
+function landingRoleText(job) {
+  return [job.title || "", job.employment_type || "", ...(job.tags || [])].join(" ");
+}
+function isEarlyCareerRole(job) {
+  return /\b(intern(?:ship)?s?|graduates?|grad|learnerships?|trainees?|apprentices?|apprenticeships?|vacation programmes?|vacation programs?|student programmes?|student programs?|entry.level|junior)\b/i.test(landingRoleText(job));
+}
+function isFocusedTechRole(job) {
+  return /\b(data science|data scientist|data analyst|business intelligence|bi analyst|software (?:developer|engineer)|web developer|application developer)\b/i.test(landingRoleText(job));
+}
+function isITRole(job) {
+  return /\b(it|information technology|technology|software|data|analytics|cyber ?security|machine learning|artificial intelligence|cloud|devops|network|database|systems analyst|qa tester|technical support|programming|developer|engineer)\b/i.test(landingRoleText(job));
+}
+function isPreferredLandingRole(job) {
+  const isSouthAfrican = job.country_code === "ZA" || /south africa/i.test(job.location || "");
+  return (isSouthAfrican || job.is_remote === true) && isITRole(job);
+}
+function interleaveLandingJobs(jobs) {
+  const isZa = job => job.country_code === "ZA" || /south africa/i.test(job.location || "");
+  const groups = [
+    jobs.filter(job => isZa(job) && isEarlyCareerRole(job) && isFocusedTechRole(job)),
+    jobs.filter(job => job.is_remote === true && !isZa(job) && isEarlyCareerRole(job) && isFocusedTechRole(job)),
+    jobs.filter(job => isZa(job) && !isEarlyCareerRole(job) && isFocusedTechRole(job)),
+    jobs.filter(job => job.is_remote === true && !isZa(job) && !isEarlyCareerRole(job) && isFocusedTechRole(job)),
+    jobs.filter(job => isZa(job) && isEarlyCareerRole(job) && !isFocusedTechRole(job)),
+    jobs.filter(job => job.is_remote === true && !isZa(job) && isEarlyCareerRole(job) && !isFocusedTechRole(job)),
+    jobs.filter(job => isZa(job) && !isEarlyCareerRole(job) && !isFocusedTechRole(job)),
+    jobs.filter(job => job.is_remote === true && !isZa(job) && !isEarlyCareerRole(job) && !isFocusedTechRole(job)),
+  ];
+  const ordered = [];
+  for (let index = 0; groups.some(group => index < group.length); index++) {
+    groups.forEach(group => { if (group[index]) ordered.push(group[index]); });
+  }
+  return ordered;
+}
 function isSouthAfricanEarlyCareer(job) {
   const text = [job.title, job.employment_type, ...(job.tags || [])].filter(Boolean).join(" ");
   const earlyCareer = /\b(?:intern(?:ship)?s?|graduates?|grad|learnerships?|trainees?|apprenticeships?|vacation programmes?|vacation programs?|student programmes?|student programs?)\b/i.test(text);
@@ -246,12 +283,8 @@ function isSouthAfricanEarlyCareer(job) {
   return earlyCareer && southAfrican;
 }
 function earlyCareerPriority(job) {
-  const title = job.title || "";
-  const tags = (job.tags || []).join(" ");
-  const focused = new RegExp("\b(data science|data scientist|data analyst|business intelligence|bi analyst|software (developer|engineer)|web developer|application developer)\\b", "i");
-  if (focused.test(title)) return 2;
-  const itIndustry = new RegExp("\b(it|information technology|technology|software|data|analytics|cyber ?security|machine learning|artificial intelligence|ai|cloud|devops|network|database|systems analyst|qa tester|technical support)\\b", "i");
-  return itIndustry.test(title) || itIndustry.test(tags) ? 1 : 0;
+  if (isFocusedTechRole(job)) return 2;
+  return isITRole(job) ? 1 : 0;
 }
 function jobCard(job) {
   const id = Number(job.id), initials = (job.company || "?").split(/\s+/).map(x => x[0]).slice(0,2).join("").toUpperCase();
@@ -418,6 +451,7 @@ function showInternships() {
   $("#metric-grid").classList.add("hidden");
   $("#cv-banner").classList.add("hidden");
   $("#internships-note").classList.remove("hidden");
+  $("#overview-feed-note").classList.add("hidden");
   $("#breadcrumb-current").textContent = "SA Internships & Graduates";
   $("#search-input").value = "";
   $("#location-filter").value = "South Africa";
@@ -432,13 +466,13 @@ function showInternships() {
 }
 function showOverview() {
   state.view="overview"; $("#location-filter").value=""; $("#remote-filter").value=""; $("#overview-view").classList.remove("hidden"); $("#applications-view").classList.add("hidden");
-  $("#metric-grid").classList.remove("hidden"); $("#cv-banner").classList.remove("hidden"); $("#internships-note").classList.add("hidden");
+  $("#metric-grid").classList.remove("hidden"); $("#cv-banner").classList.remove("hidden"); $("#internships-note").classList.add("hidden"); $("#overview-feed-note").classList.remove("hidden");
   $("#profile-recommendations").classList.toggle("hidden", !state.profile);
   $("#welcome-kicker").innerHTML = '<span class="spark">✳</span> YOUR NEXT MOVE STARTS HERE';
   $("#welcome-title").textContent = "Make your next move.";
   $("#welcome-subhead").textContent = "A clearer path from job search to signed offer.";
   $("#feed-kicker").textContent = "CURATED FOR YOUR NEXT CHAPTER";
-  $("#feed-title").textContent = "Explore opportunities";
+  $("#feed-title").textContent = "Data, software & IT opportunities";
   $("#breadcrumb-current").textContent="Overview"; document.querySelectorAll(".nav-item").forEach(button=>button.classList.toggle("active",button.dataset.view==="overview"));
   loadJobs();
 }
