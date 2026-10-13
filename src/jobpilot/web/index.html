@@ -42,7 +42,12 @@
             <div class="cv-graphic"><div class="orb orb-one"></div><div class="orb orb-two"></div><div class="cv-sheet"><span></span><span></span><span></span><i>✳</i></div></div>
             <div class="cv-copy"><span class="banner-kicker">A BETTER SEARCH STARTS WITH YOU</span><h2>Bring your experience into focus.</h2><p>Upload your CV to see your strongest job matches and tailor it for roles that fit.</p></div>
             <div class="cv-cta"><button class="button button-light" id="upload-button">Upload your CV <span>↗</span></button><span>PDF or DOCX · up to 8 MB</span></div>
+          </section>
             <input type="file" id="cv-file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+          <div id="cv-upload-status" class="cv-upload-status hidden" role="status" aria-live="polite"></div>
+          <section id="profile-recommendations" class="profile-recommendations hidden" aria-labelledby="recommendation-title">
+            <div class="recommendation-heading"><div><div class="eyebrow muted-eyebrow">BASED ON YOUR PROFILE</div><h2 id="recommendation-title">Roles worth a look</h2><p>Ranked by the skills, education and experience in your CV, with student and early-career roles prioritized. Check each employer’s requirements before applying.</p></div></div>
+            <div id="recommendation-list" class="job-list"></div>
           </section>
           <div class="section-heading"><div><div class="eyebrow muted-eyebrow" id="feed-kicker">CURATED FOR YOUR NEXT CHAPTER</div><h2 id="feed-title">Explore opportunities</h2></div><button class="button button-quiet" id="view-applications">View application board <span>→</span></button></div>
           <p class="subhead hidden" id="internships-note">South Africa roles marked as internships, graduate programmes, learnerships or trainee positions.</p>
@@ -65,7 +70,7 @@
   <div class="modal-backdrop hidden" id="modal-backdrop" role="presentation">
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="modal-close" id="modal-close" aria-label="Close">×</button><div class="modal-content" id="modal-content"></div></section>
   </div>
-  <script src="/assets/app.js?v=20261013-optional-accounts" defer></script>
+  <script src="/assets/app.js?v=20261013-profile-recommendations" defer></script>
 </body>
 </html>
 
