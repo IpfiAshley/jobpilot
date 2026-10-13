@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#09090b">
-  <title>JobPilot — Find your next role</title>  <link rel="stylesheet" href="/assets/styles.css?v=20261014-dark-dashboard">
+  <title>JobPilot — Find your next role</title>  <link rel="stylesheet" href="/assets/styles.css?v=20261014-card-grid">
 </head>
 <body>
   <div class="app-shell">
@@ -45,18 +45,11 @@
             <div class="recommendation-heading"><div><div class="eyebrow muted-eyebrow">BASED ON YOUR PROFILE</div><h2 id="recommendation-title">Roles worth a look</h2><p>Ranked by the skills, education and experience in your CV, with student and early-career roles prioritized. Check each employer’s requirements before applying.</p></div></div>
             <div id="recommendation-list" class="job-list"></div>
           </section>
-          <div class="section-heading"><div><div class="eyebrow muted-eyebrow" id="feed-kicker">OPEN ROLES TO EXPLORE</div><h2 id="feed-title">Data, software &amp; IT opportunities</h2></div><button class="button button-quiet" id="view-applications">Your applications <span>→</span></button></div>
+          <div class="section-heading"><div class="feed-heading-copy"><div class="eyebrow muted-eyebrow" id="feed-kicker">OPEN ROLES TO EXPLORE</div><div class="feed-title-row"><h2 id="feed-title">Data, software &amp; IT opportunities</h2><div class="feed-counters" aria-label="Job search statistics"><span class="feed-counter" id="results-count">— matching</span><span class="feed-counter"><strong id="match-badge-count">0</strong> strong matches</span><span class="feed-counter"><strong id="pipeline-badge-count">0</strong> in pipeline</span></div></div></div><button class="button button-quiet" id="view-applications">Your applications <span>→</span></button></div>
           <p class="subhead" id="overview-feed-note">South African and global remote roles across data science, software and IT, including internships, graduate programmes and jobs.</p>
           <p class="subhead hidden" id="internships-note">South Africa roles marked as internships, graduate programmes, learnerships or trainee positions.</p>
-          <div class="filter-row"><label class="search-box"><span>⌕</span><input id="search-input" type="search" placeholder="Role, skill, or company" aria-label="Search jobs"><kbd>↵</kbd></label><label class="select-wrap"><select id="location-filter" aria-label="Filter by location"><option value="">All locations</option><option>Johannesburg</option><option>Cape Town</option><option>Pretoria</option><option>Durban</option><option>South Africa</option><option>Worldwide</option></select><span>⌄</span></label><label class="select-wrap"><select id="remote-filter" aria-label="Filter by work style"><option value="">Any work style</option><option value="true">Remote</option><option value="false">On-site / hybrid</option></select><span>⌄</span></label><div class="filter-spacer"></div><span class="results-count" id="results-count"></span></div>
-          <div class="job-browser" aria-label="Job opportunities">
-            <div class="job-list-pane" aria-label="Available roles">
-              <div id="job-list" class="job-list"><div class="loading-state"><span class="loader"></span> Finding roles worth your time…</div></div>
-            </div>
-            <aside id="job-detail" class="job-detail-pane" aria-label="Selected job" aria-live="polite" tabindex="-1">
-              <div class="job-detail-empty">Choose a role from the list to see the full description and application actions.</div>
-            </aside>
-          </div>
+          <div class="filter-row" aria-label="Filter opportunities"><label class="search-box"><span>⌕</span><input id="search-input" type="search" placeholder="Role, skill, or company" aria-label="Search jobs"><kbd>↵</kbd></label><label class="select-wrap"><select id="location-filter" aria-label="Filter by location"><option value="">All locations</option><option>Johannesburg</option><option>Cape Town</option><option>Pretoria</option><option>Durban</option><option>South Africa</option><option>Worldwide</option></select><span>⌄</span></label><label class="select-wrap"><select id="remote-filter" aria-label="Filter by work style"><option value="">Any work style</option><option value="true">Remote</option><option value="false">On-site / hybrid</option></select><span>⌄</span></label><label class="select-wrap"><select id="match-filter" aria-label="Filter by CV match score"><option value="">Any match</option><option value="50">50%+ match</option><option value="80">80%+ match</option></select><span>⌄</span></label></div>
+          <div id="job-list" class="job-list job-grid" aria-label="Job opportunities"><div class="loading-state"><span class="loader"></span> Finding roles worth your time…</div></div>
         </section>
 
         <section id="applications-view" class="hidden">
@@ -74,7 +67,7 @@
   <div class="modal-backdrop hidden" id="modal-backdrop" role="presentation">
     <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="modal-close" id="modal-close" aria-label="Close">×</button><div class="modal-content" id="modal-content"></div></section>
   </div>
-  <script src="/assets/app.js?v=20261014-dark-dashboard" defer></script>
+  <script src="/assets/app.js?v=20261014-card-grid" defer></script>
 </body>
 </html>
 
