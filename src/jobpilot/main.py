@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import String, cast, or_, select
 
 from jobpilot.ai.tailoring import TailoringError, TailoringService
+from jobpilot.auth import router as auth_router
 from jobpilot.core.config import get_settings
 from jobpilot.cv.export import export_docx, export_pdf
 from jobpilot.cv.matcher import match_cv_to_job
@@ -31,6 +32,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="JobPilot API", version="0.2.0", lifespan=lifespan)
 app.mount("/assets", StaticFiles(directory=WEB_DIR), name="assets")
+app.include_router(auth_router)
 
 
 @app.get("/", include_in_schema=False)
