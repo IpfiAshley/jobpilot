@@ -1,9 +1,38 @@
 const stages = ["Saved", "Tailored", "Applied", "Interviewing", "Offer"];
-const state = { jobs: [], profile: null, scores: {}, view: "overview", busy: false };
+const state = { jobs: [], profile: null, scores: {}, view: "overview", busy: false, user: null, remoteTracker: {} };
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
-const tracker = () => { try { return JSON.parse(localStorage.getItem("jobpilot-tracker") || "{}"); } catch { return {}; } };
-const saveTracker = (value) => { localStorage.setItem("jobpilot-tracker", JSON.stringify(value)); updateStats(); };
+const localTracker = () => { try { return JSON.parse(localStorage.getItem("jobpilot-tracker") || "{}"); } catch { return {}; } };
+const tracker = () => JSON.parse(JSON.stringify(state.user ? state.remoteTracker : localTracker()));
+const saveTracker = async (value) => {
+  if (!state.user) {
+    localStorage.setItem("jobpilot-tracker", JSON.stringify(value));
+    updateStats();
+    return;
+  }
+  const previous = state.remoteTracker;
+  state.remoteTracker = JSON.parse(JSON.stringify(value));
+  updateStats();
+  const ids = new Set([...Object.keys(previous), ...Object.keys(value)]);
+  let failed = false;
+  for (const id of ids) {
+    if (JSON.stringify(previous[id]) === JSON.stringify(value[id])) continue;
+    try {
+      if (!value[id]) await api(`/api/v1/applications/${encodeURIComponent(id)}`, {method:"DELETE"});
+      else await api("/api/v1/applications", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({job_id:Number(id),stage:value[id].stage})});
+    } catch {
+      failed = true;
+    }
+  }
+  if (failed) {
+    try {
+      state.remoteTracker = await (await api("/api/v1/applications")).json();
+      updateStats();
+      if (state.view === "applications") renderBoard();
+    } catch { /* keep the last visible copy if the connection drops */ }
+    toast("A saved role could not sync. Please refresh your application board.");
+  }
+};
 const safeUrl = (value) => { try { const url = new URL(value); return ["https:","http:"].includes(url.protocol) ? url.href : "#"; } catch { return "#"; } };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -11,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#today-date").textContent = new Intl.DateTimeFormat(undefined, {month:"short",day:"numeric",year:"numeric"}).format(today);
   $("#footer-year").textContent = today.getFullYear();
   $("#refresh-button").addEventListener("click", () => loadJobs());
+  $("#account-button").addEventListener("click", () => state.user ? showAccountPanel() : showAccountForm("signup"));
   $("#search-input").addEventListener("keydown", (event) => { if (event.key === "Enter") loadJobs(); });
   $("#location-filter").addEventListener("change", () => loadJobs());
   $("#remote-filter").addEventListener("change", () => loadJobs());
@@ -28,6 +58,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#modal-backdrop").addEventListener("click", (event) => { if (event.target.id === "modal-backdrop") closeModal(); });
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeModal(); });
   loadJobs();
+  loadAccount();
 });
 
 async function api(path, options = {}) {
@@ -38,6 +69,98 @@ async function api(path, options = {}) {
     throw new Error(detail);
   }
   return response;
+}
+
+
+async function loadAccount() {
+  try {
+    const result = await (await api("/api/v1/auth/me")).json();
+    state.user = result.user;
+    if (state.user) {
+      const local = localTracker();
+      const remote = await (await api("/api/v1/applications")).json();
+      state.remoteTracker = {...local, ...remote};
+      const failedLocal = {};
+      for (const [id, record] of Object.entries(local)) {
+        if (remote[id]) continue;
+        try {
+          await api("/api/v1/applications", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({job_id:Number(id),stage:record.stage})});
+        } catch { failedLocal[id] = record; }
+      }
+      if (!Object.keys(failedLocal).length) localStorage.removeItem("jobpilot-tracker");
+      const synced = await (await api("/api/v1/applications")).json();
+      state.remoteTracker = {...failedLocal, ...synced};
+      if (Object.keys(failedLocal).length) toast("Some older saved roles could not be moved to your account. Please check your board.");
+    }
+  } catch {
+    state.user = null;
+    state.remoteTracker = {};
+  }
+  renderAccountButton();
+  updateStats();
+  renderJobs();
+}
+function renderAccountButton() {
+  const button = $("#account-button");
+  button.textContent = state.user ? "Account" : "Sign in";
+  button.setAttribute("aria-label", state.user ? "Account settings" : "Sign in or create an account");
+  $("#user-name").textContent = state.user?.name || "Your workspace";
+  $("#user-avatar").textContent = state.user ? state.user.name.trim()[0].toUpperCase() : "Y";
+}
+function showAccountForm(mode) {
+  const signup = mode === "signup";
+  openModal(`<div class="modal-eyebrow">OPTIONAL JOBPILOT ACCOUNT</div><h2 id="modal-title">${signup ? "Save your applications anywhere." : "Welcome back."}</h2><p class="modal-subtitle">${signup ? "Create an account to keep your application board across devices. You can keep browsing without signing up." : "Sign in to see your saved application board."}</p><form id="account-form" class="account-form">
+    ${signup ? '<label>Your name<input name="name" autocomplete="name" required maxlength="120"></label>' : ""}
+    <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="320"></label>
+    <label>Password<input name="password" type="password" autocomplete="${signup ? "new-password" : "current-password"}" required minlength="${signup ? "12" : "1"}" maxlength="128">${signup ? '<small>Use at least 12 characters.</small>' : ""}</label>
+    ${signup ? '<label class="account-consent"><input name="consent" type="checkbox" required><span>I agree that JobPilot stores my name, email address and saved application board. My CV remains session-only and is not stored in this account.</span></label>' : ""}
+    <div class="account-error hidden" id="account-error" role="alert"></div>
+    <div class="modal-actions"><button class="button button-primary" type="submit">${signup ? "Create account" : "Sign in"}</button><button class="button button-secondary" type="button" id="account-mode-toggle">${signup ? "I already have an account" : "Create an account"}</button></div>
+  </form><p class="account-footnote">Email verification and password recovery are not set up yet. Keep your password safe.</p>`);
+  $("#account-mode-toggle").addEventListener("click", () => showAccountForm(signup ? "login" : "signup"));
+  $("#account-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const button = event.currentTarget.querySelector('button[type="submit"]');
+    const errorBox = $("#account-error");
+    button.disabled = true;
+    button.textContent = signup ? "Creating…" : "Signing in…";
+    errorBox.classList.add("hidden");
+    const payload = signup
+      ? {name:String(form.get("name") || "").trim(),email:String(form.get("email") || "").trim(),password:String(form.get("password") || ""),consent:form.get("consent") === "on"}
+      : {email:String(form.get("email") || "").trim(),password:String(form.get("password") || "")};
+    try {
+      const response = await api(`/api/v1/auth/${signup ? "signup" : "login"}`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      const result = await response.json();
+      state.user = result.user;
+      closeModal();
+      await loadAccount();
+      toast(signup ? "Your account is ready. Your application board will sync here." : "You are signed in.");
+    } catch (error) {
+      errorBox.textContent = error.message;
+      errorBox.classList.remove("hidden");
+      button.disabled = false;
+      button.textContent = signup ? "Create account" : "Sign in";
+    }
+  });
+}
+function showAccountPanel() {
+  if (!state.user) return showAccountForm("signup");
+  openModal(`<div class="modal-eyebrow">YOUR OPTIONAL ACCOUNT</div><h2 id="modal-title">Your JobPilot account</h2><p class="modal-subtitle">${escapeHtml(state.user.name)} · ${escapeHtml(state.user.email)}</p><div class="profile-panel"><h3>Saved applications</h3><p>Your board is linked to this account and can be opened on another device. Your CV is still kept only in memory for the current session.</p></div><div class="modal-actions"><button class="button button-secondary" id="account-signout">Sign out</button><button class="button button-secondary" id="account-delete">Delete account</button></div>`);
+  $("#account-signout").addEventListener("click", async () => {
+    try { await api("/api/v1/auth/logout", {method:"POST"}); } catch { /* clear local account view even if the request times out */ }
+    state.user = null; state.remoteTracker = {}; renderAccountButton(); closeModal(); updateStats(); renderJobs(); toast("You are signed out. Guest browsing is still available.");
+  });
+  $("#account-delete").addEventListener("click", async () => {
+    if (!window.confirm("Delete your JobPilot account and its saved application board? This cannot be undone.")) return;
+    const password = window.prompt("Enter your password to confirm account deletion:");
+    if (password === null) return;
+    try {
+      await api("/api/v1/auth/account", {method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({password})});
+      state.user = null; state.remoteTracker = {}; localStorage.removeItem("jobpilot-tracker");
+      renderAccountButton(); closeModal(); updateStats(); renderJobs(); toast("Your account and saved board were deleted.");
+    } catch (error) { toast(error.message); }
+  });
 }
 
 async function loadJobs() {
