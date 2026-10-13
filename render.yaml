@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: jobpilot-preview
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: preview
+      - key: DATABASE_URL
+        value: sqlite:////tmp/jobpilot-preview.db
