@@ -179,16 +179,31 @@ async function loadJobs() {
     const preferredLanding = state.view === "overview" && !location && !remote;
     let importedJobs;
     if (preferredLanding) {
+      const landingTerms = ["software", "data", "intern", "graduate"];
+      const landingRequests = [];
       const southAfricaParams = new URLSearchParams(params);
       southAfricaParams.set("location", "South Africa");
+      southAfricaParams.set("limit", "100");
+      landingRequests.push(api(`/api/v1/jobs?${southAfricaParams}`));
       const remoteParams = new URLSearchParams(params);
       remoteParams.set("remote", "true");
-      const [southAfricaResponse, remoteResponse] = await Promise.all([
-        api(`/api/v1/jobs?${southAfricaParams}`),
-        api(`/api/v1/jobs?${remoteParams}`),
-      ]);
-      const [southAfricaJobs, remoteJobs] = await Promise.all([southAfricaResponse.json(), remoteResponse.json()]);
-      const uniqueJobs = new Map([...southAfricaJobs, ...remoteJobs].map(job => [job.id, job]));
+      remoteParams.set("limit", "100");
+      landingRequests.push(api(`/api/v1/jobs?${remoteParams}`));
+      for (const term of landingTerms) {
+        const zaSearch = new URLSearchParams(params);
+        zaSearch.set("location", "South Africa");
+        zaSearch.set("q", term);
+        zaSearch.set("limit", "100");
+        landingRequests.push(api(`/api/v1/jobs?${zaSearch}`));
+        const remoteSearch = new URLSearchParams(params);
+        remoteSearch.set("remote", "true");
+        remoteSearch.set("q", term);
+        remoteSearch.set("limit", "100");
+        landingRequests.push(api(`/api/v1/jobs?${remoteSearch}`));
+      }
+      const responses = await Promise.all(landingRequests);
+      const resultSets = await Promise.all(responses.map(response => response.json()));
+      const uniqueJobs = new Map(resultSets.flat().map(job => [job.id, job]));
       importedJobs = [...uniqueJobs.values()];
     } else {
       const response = await api(`/api/v1/jobs?${params}`);
