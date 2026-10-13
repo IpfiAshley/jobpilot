@@ -31,6 +31,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 
 def create_schema() -> None:
+    from jobpilot.models.account import TrackedApplication, User  # noqa: F401
     from jobpilot.models.job import Job  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
