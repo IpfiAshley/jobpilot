@@ -217,7 +217,8 @@ def current_account(request: Request) -> dict[str, object]:
 @router.post("/api/v1/auth/logout")
 def logout(request: Request, response: Response) -> dict[str, str]:
     _validate_origin(request)
-    response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, secure=True, samesite="lax")
+    settings = get_settings()
+    response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, secure=settings.app_env.casefold() not in {"development", "local", "test"}, samesite="lax")
     return {"status": "signed_out"}
 
 
@@ -232,7 +233,8 @@ def delete_account(payload: DeleteAccountPayload, request: Request, response: Re
         db.execute(delete(TrackedApplication).where(TrackedApplication.user_id == user.id))
         db.delete(stored)
         db.commit()
-    response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, secure=True, samesite="lax")
+    settings = get_settings()
+    response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, secure=settings.app_env.casefold() not in {"development", "local", "test"}, samesite="lax")
     return {"status": "account_deleted"}
 
 
