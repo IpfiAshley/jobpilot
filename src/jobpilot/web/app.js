@@ -87,9 +87,9 @@ function isSouthAfricanEarlyCareer(job) {
 function earlyCareerPriority(job) {
   const title = job.title || "";
   const tags = (job.tags || []).join(" ");
-  const focused = /\\b(data science|data scientist|data analyst|business intelligence|bi analyst|software (developer|engineer)|web developer|application developer)\\b/i;
+  const focused = new RegExp("\\b(data science|data scientist|data analyst|business intelligence|bi analyst|software (developer|engineer)|web developer|application developer)\\b", "i");
   if (focused.test(title)) return 2;
-  const itIndustry = /\\b(it|information technology|technology|software|data|analytics|cyber ?security|machine learning|artificial intelligence|\bai\b|cloud|devops|network|database|systems analyst|qa tester|technical support)\\b/i;
+  const itIndustry = new RegExp("\\b(it|information technology|technology|software|data|analytics|cyber ?security|machine learning|artificial intelligence|ai|cloud|devops|network|database|systems analyst|qa tester|technical support)\\b", "i");
   return itIndustry.test(title) || itIndustry.test(tags) ? 1 : 0;
 }
 function jobCard(job) {
