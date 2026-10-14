@@ -356,7 +356,7 @@ function jobCard(job) {
       <div class="job-card-meta"><div class="job-card-tags">${tagMarkup}</div><span class="match-pill job-card-score ${score === undefined ? "low" : scoreClass}">${score === undefined ? "Add CV" : `${score}% match`}</span></div>
       <div class="job-card-actions">
         <button class="button button-small button-save ${tracked ? "saved" : ""}" data-action="${tracked ? "untrack" : "save"}" data-job-id="${id}">${tracked ? escapeHtml(tracked.stage) : "Save"}</button>
-        <button class="button button-small button-secondary" data-action="tailor" data-job-id="${id}">${state.profile ? "Tailor CV" : "Add CV"}</button>
+        <button class="button button-small button-primary auto-tailor-action" data-action="tailor" data-job-id="${id}">✨ Auto-Tailor Application</button>
         <a class="button button-small button-primary apply-action" href="${escapeHtml(safeUrl(job.url))}" target="_blank" rel="noopener noreferrer">Apply ↗</a>
       </div>
     </footer>
@@ -370,7 +370,13 @@ async function handleJobAction(action, id) {
   } else if (action === "untrack") {
     const data = tracker(); delete data[id]; saveTracker(data); renderJobs(); toast("Role removed from your board.");
   } else if (action === "match") await scoreJob(job, true);
-  else if (action === "tailor") state.profile ? await tailorJob(job) : $("#cv-file").click();
+  else if (action === "tailor") {
+    if (state.profile) await tailorJob(job);
+    else {
+      toast("Add your CV first. It will stay in this session.");
+      chooseCV();
+    }
+  }
 }
 
 function chooseCV() {
@@ -472,33 +478,101 @@ function showMatch(job, result) {
 }
 
 async function tailorJob(job) {
-  openModal(`<div class="modal-eyebrow">AI CV TAILORING</div><h2 id="modal-title">Before you create a draft</h2><p class="modal-subtitle">Your extracted CV profile and this job description will be sent to the AI provider configured for this workspace. The app does not save your CV, but the provider may process the request under its own terms.</p><div class="review-note">Only continue if you are comfortable sharing this information with the configured provider. You will be able to review the complete draft before downloading it.</div><div class="modal-actions"><button class="button button-primary" id="confirm-tailor">Continue to tailor</button><button class="button button-secondary" id="cancel-tailor">Cancel</button></div>`);
+  openModal(`<div class="modal-eyebrow">AI CV TAILORING</div><h2 id="modal-title">Create a draft for this role?</h2><p class="modal-subtitle">Your CV profile and this job description will be sent to the AI provider configured for JobPilot. The app does not save your CV; the provider may process the request under its own terms.</p><div class="review-note">Review every line before using it. JobPilot grounds the draft in your CV, but AI can still make mistakes.</div><div class="modal-actions"><button class="button button-primary" id="confirm-tailor">✨ Auto-Tailor Application</button><button class="button button-secondary" id="cancel-tailor">Cancel</button></div>`);
   $("#confirm-tailor").addEventListener("click", () => { closeModal(); requestTailoring(job); });
   $("#cancel-tailor").addEventListener("click", closeModal);
 }
 
 async function requestTailoring(job) {
   const button = document.querySelector(`[data-action="tailor"][data-job-id="${job.id}"]`);
-  if (button) { button.disabled = true; button.textContent = "Working…"; }
+  if (button) { button.disabled = true; button.textContent = "Preparing…"; }
+  openModal(`<div class="tailor-modal-shell"><div class="modal-eyebrow">APPLICATION DRAFT</div><h2 id="modal-title">Tailoring your application</h2><p class="modal-subtitle">${escapeHtml(job.title)} · ${escapeHtml(job.company || "Company")}</p><div class="tailor-loading" role="status" aria-live="polite"><span class="tailor-spinner" aria-hidden="true"></span><div><strong>Matching your experience to this role</strong><p>Organizing relevant skills, projects and CV points. This may take a moment.</p></div></div><div class="tailor-skeleton" aria-hidden="true"><i></i><i></i><i></i></div></div>`);
   try {
     const response = await api("/api/v1/cv/tailor", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profile:state.profile,job_title:job.title,company:job.company || "",job_description:job.description || ""})});
     const tailored = await response.json();
-    const data = tracker(); data[job.id] = {stage:"Tailored", job:compactJob(job)}; saveTracker(data); renderJobs();
+    const data = tracker(); data[job.id] = {stage:"Tailored", job:compactJob(job)}; await saveTracker(data); renderJobs();
     showTailored(job, tailored);
-  } catch (error) { toast(error.message); }
-  finally { if (button) { button.disabled = false; button.textContent = "Tailor"; } }
+  } catch (error) {
+    closeModal();
+    toast(error.message);
+  } finally {
+    const currentButton = document.querySelector(`[data-action="tailor"][data-job-id="${job.id}"]`);
+    if (currentButton) { currentButton.disabled = false; currentButton.textContent = "✨ Auto-Tailor Application"; }
+  }
 }
 
 function showTailored(job, tailored) {
-  const bullets = (tailored.bullets || []).map(item => `<div class="profile-panel"><h3>Reworked experience bullet</h3><p>${escapeHtml(item.text)}</p><p style="font-size:10px;color:#738096;margin-top:7px">Source: ${escapeHtml(item.source_text)}</p></div>`).join("");
-  openModal(`<div class="modal-eyebrow">TAILORED DRAFT · REVIEW BEFORE USING</div><h2 id="modal-title">${escapeHtml(job.title)}</h2><p class="modal-subtitle">Drafted for ${escapeHtml(job.company || "this role")}. Your source CV has not been changed.</p><div class="review-note">${escapeHtml(tailored.grounding_note || "Review every line for accuracy before using it.")}</div><div class="tailored-section"><h3>Professional summary</h3><textarea id="tailored-summary">${escapeHtml(tailored.summary || "")}</textarea></div><div class="tailored-section"><h3>Prioritized skills</h3><div class="keyword-list">${(tailored.skills || []).map(x=>`<span class="keyword">${escapeHtml(x)}</span>`).join("")}</div></div>${bullets}<div class="tailored-section"><h3>Cover letter draft</h3><textarea id="cover-letter">${escapeHtml(tailored.cover_letter || "")}</textarea></div><div class="modal-actions"><button class="button button-primary" id="download-docx">Download DOCX</button><button class="button button-secondary" id="download-pdf">Download PDF</button><button class="button button-secondary" id="copy-letter">Copy cover letter</button></div>`);
-  $("#download-docx").addEventListener("click", () => downloadTailored(job,tailored,"docx"));
-  $("#download-pdf").addEventListener("click", () => downloadTailored(job,tailored,"pdf"));
-  $("#copy-letter").addEventListener("click", async () => { await navigator.clipboard.writeText($("#cover-letter").value); toast("Cover letter copied."); });
+  const bullets = (tailored.bullets || []).map((item, index) => `<label class="tailored-section"><span class="tailor-field-label">Experience or project point · source ${index + 1}</span><textarea class="tailored-bullet" data-bullet-index="${index}" aria-label="Edited CV bullet ${index + 1}">${escapeHtml(item.text || "")}</textarea><small>Original: ${escapeHtml(item.source_text || "")}</small></label>`).join("");
+  const coverLetter = typeof tailored.cover_letter === "string" ? tailored.cover_letter : tailored.cover_letter?.text || tailored.cover_letter_draft?.text || "";
+  const content = `<div class="tailor-modal-shell">
+    <div class="modal-eyebrow">APPLICATION DRAFT · REVIEW BEFORE USING</div>
+    <h2 id="modal-title">${escapeHtml(job.title)}</h2>
+    <p class="modal-subtitle">Prepared for ${escapeHtml(job.company || "this role")}. Your source CV is unchanged.</p>
+    <div class="review-note">${escapeHtml(tailored.grounding_note || "Review every line for accuracy before using it.")}</div>
+    <div class="tailor-tabs" role="tablist" aria-label="Application draft sections">
+      <button class="tailor-tab active" id="tailored-cv-tab" type="button" role="tab" aria-selected="true" aria-controls="tailored-cv-panel">Tailored CV</button>
+      <button class="tailor-tab" id="cover-letter-tab" type="button" role="tab" aria-selected="false" aria-controls="cover-letter-panel">Cover letter</button>
+    </div>
+    <section class="tailor-panel" id="tailored-cv-panel" role="tabpanel" aria-labelledby="tailored-cv-tab">
+      <label class="tailored-section"><span class="tailor-field-label">Professional summary</span><textarea id="tailored-summary">${escapeHtml(tailored.summary || "")}</textarea></label>
+      <label class="tailored-section"><span class="tailor-field-label">Prioritized skills · edit as comma-separated items</span><textarea id="tailored-skills" class="skills-editor">${escapeHtml((tailored.skills || []).join(", "))}</textarea></label>
+      ${bullets || '<p class="modal-subtitle">No experience or project bullets were found in this CV profile.</p>'}
+      <div class="modal-actions"><button class="button button-secondary" id="copy-cv">Copy tailored CV</button><button class="button button-secondary" id="download-docx">Download DOCX</button><button class="button button-primary" id="download-pdf">Download PDF</button></div>
+    </section>
+    <section class="tailor-panel hidden" id="cover-letter-panel" role="tabpanel" aria-labelledby="cover-letter-tab">
+      <label class="tailored-section"><span class="tailor-field-label">Three-paragraph cover letter · edit before using</span><textarea id="cover-letter" class="cover-letter-editor">${escapeHtml(coverLetter)}</textarea></label>
+      <div class="modal-actions"><button class="button button-secondary" id="copy-letter">Copy cover letter</button></div>
+    </section>
+  </div>`;
+  openModal(content);
+  $("#tailored-cv-tab").addEventListener("click", () => setTailorTab("cv"));
+  $("#cover-letter-tab").addEventListener("click", () => setTailorTab("letter"));
+  $("#copy-cv").addEventListener("click", () => copyDraft(plainTextCV(getEditedTailoring(tailored), state.profile)));
+  $("#copy-letter").addEventListener("click", () => copyDraft($("#cover-letter").value));
+  $("#download-docx").addEventListener("click", () => downloadTailored(job, tailored, "docx"));
+  $("#download-pdf").addEventListener("click", () => downloadTailored(job, tailored, "pdf"));
+}
+function setTailorTab(tab) {
+  const cvSelected = tab === "cv";
+  $("#tailored-cv-tab").classList.toggle("active", cvSelected);
+  $("#cover-letter-tab").classList.toggle("active", !cvSelected);
+  $("#tailored-cv-tab").setAttribute("aria-selected", String(cvSelected));
+  $("#cover-letter-tab").setAttribute("aria-selected", String(!cvSelected));
+  $("#tailored-cv-panel").classList.toggle("hidden", !cvSelected);
+  $("#cover-letter-panel").classList.toggle("hidden", cvSelected);
+}
+function getEditedTailoring(tailored) {
+  return {
+    ...tailored,
+    summary: $("#tailored-summary")?.value ?? tailored.summary ?? "",
+    skills: ($("#tailored-skills")?.value ?? (tailored.skills || []).join(", ")).split(",").map(skill => skill.trim()).filter(Boolean),
+    bullets: (tailored.bullets || []).map((item, index) => ({...item, text: document.querySelector(`.tailored-bullet[data-bullet-index="${index}"]`)?.value ?? item.text}))
+  };
+}
+function plainTextCV(tailored, profile) {
+  const contact = [profile?.email, profile?.phone].filter(Boolean).join(" · ");
+  const experience = (tailored.bullets || []).map(item => `• ${item.text}`).join("\n");
+  return [
+    profile?.name || "",
+    contact,
+    tailored.summary ? `Professional Summary\n${tailored.summary}` : "",
+    tailored.skills?.length ? `Skills\n${tailored.skills.join(", ")}` : "",
+    experience ? `Experience & Projects\n${experience}` : "",
+    profile?.education?.length ? `Education\n${profile.education.join("\n")}` : ""
+  ].filter(Boolean).join("\n\n");
+}
+async function copyDraft(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Draft copied to your clipboard.");
+  } catch {
+    toast("Clipboard access was blocked by your browser.");
+  }
 }
 
 async function downloadTailored(job, tailored, format) {
-  const edited = {...tailored,summary:$("#tailored-summary").value,cover_letter:$("#cover-letter").value};
+  const edited = getEditedTailoring(tailored);
+  edited.cover_letter = $("#cover-letter")?.value ?? (typeof tailored.cover_letter === "string" ? tailored.cover_letter : tailored.cover_letter?.text || "");
   const response = await api("/api/v1/cv/export",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profile:state.profile,job_title:job.title,company:job.company || "",tailored:edited,format})});
   const blob = await response.blob(), url = URL.createObjectURL(blob), link = document.createElement("a");
   link.href=url; link.download=`${slug(job.title)}-cv.${format}`; link.click(); URL.revokeObjectURL(url);
@@ -582,8 +656,8 @@ function updateCardScore(jobId, score) {
   });
   if ($("#match-filter")?.value) renderJobs();
 }
-function openModal(content) { $("#modal-content").innerHTML=content; $("#modal-backdrop").classList.remove("hidden"); document.body.style.overflow="hidden"; }
-function closeModal() { $("#modal-backdrop").classList.add("hidden"); document.body.style.overflow=""; }
+function openModal(content) { $("#modal-content").innerHTML=content; $(".modal").classList.toggle("modal-tailoring", content.includes("tailor-modal-shell")); $("#modal-backdrop").classList.remove("hidden"); document.body.style.overflow="hidden"; }
+function closeModal() { $("#modal-backdrop").classList.add("hidden"); $(".modal").classList.remove("modal-tailoring"); document.body.style.overflow=""; }
 function toast(message) { const element=$("#toast");element.textContent=message;element.classList.add("visible");clearTimeout(toast.timer);toast.timer=setTimeout(()=>element.classList.remove("visible"),3600); }
 function timeAgo(date) { const days=Math.floor((Date.now()-new Date(date).getTime())/86400000);return days<1?"Today":days===1?"1 day ago":`${days} days ago`; }
 function formatSalary(job) { const amount=job.salary_min&&job.salary_max?`${job.salary_min.toLocaleString()}–${job.salary_max.toLocaleString()}`:Number(job.salary_min||job.salary_max).toLocaleString();return `${job.salary_currency||""} ${amount}`.trim(); }

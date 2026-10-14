@@ -1429,3 +1429,30 @@ body{height:auto;min-height:100vh;overflow-x:hidden;overflow-y:auto}
   #recommendation-list .job-card{min-height:190px}
 }
 @media(prefers-reduced-motion:reduce){.job-grid .job-card{transition:none}}
+
+
+/* Focused styling for the application drafting modal */
+.modal.modal-tailoring{width:min(760px,100%)}
+.tailor-modal-shell{min-width:0}
+.tailor-tabs{display:flex;gap:4px;margin:15px 0 10px;padding-bottom:7px;border-bottom:1px solid var(--line-soft)}
+.tailor-tab{padding:7px 11px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--muted);font-size:11px}
+.tailor-tab:hover{background:var(--surface-hover);color:var(--text)}
+.tailor-tab.active{border-color:var(--line);background:var(--surface-raised);color:var(--text)}
+.tailor-panel{min-width:0}
+.tailor-field-label{display:block;margin-bottom:7px;color:var(--muted);font-size:10px;font-weight:600}
+.tailored-section small{display:block;margin-top:7px;color:var(--quiet);font-size:9px;line-height:1.5}
+.tailored-section .tailored-bullet{min-height:70px}
+.tailored-section .skills-editor{min-height:60px}
+.tailored-section .cover-letter-editor{min-height:260px}
+.job-card-actions .auto-tailor-action{max-width:100%;white-space:nowrap}
+.tailor-loading{display:flex;align-items:center;gap:12px;margin:18px 0;padding:16px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}
+.tailor-loading strong{font-size:11px;font-weight:600}
+.tailor-loading p{margin:4px 0 0;color:var(--muted);font-size:10px}
+.tailor-spinner{width:18px;height:18px;flex:none;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:tailor-spin .8s linear infinite}
+.tailor-skeleton{display:grid;gap:8px;padding:0 16px 16px}
+.tailor-skeleton i{height:9px;border-radius:4px;background:var(--surface-raised);animation:tailor-pulse 1.25s ease-in-out infinite}
+.tailor-skeleton i:nth-child(2){width:84%}.tailor-skeleton i:nth-child(3){width:63%}
+@keyframes tailor-spin{to{transform:rotate(360deg)}}
+@keyframes tailor-pulse{50%{opacity:.5}}
+@media(max-width:600px){.modal.modal-tailoring{max-height:92vh}.tailor-tabs{position:sticky;top:0;z-index:1;background:#141417}.job-card-actions .auto-tailor-action{white-space:normal;line-height:1.25}}
+@media(prefers-reduced-motion:reduce){.tailor-spinner,.tailor-skeleton i{animation:none}}

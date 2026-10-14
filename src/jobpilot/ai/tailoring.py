@@ -5,18 +5,26 @@ import httpx
 
 from jobpilot.core.config import Settings
 
-BANNED_TERMS = ("delve", "tapestry", "testament", "landscape", "spearhead", "synergy")
+BANNED_TERMS = (
+    "delve", "tapestry", "testament", "landscape", "spearhead", "synergy",
+    "dynamic environment", "fast-paced environment", "passionate about",
+    "cutting-edge", "leverage", "thrilled to apply",
+)
 SYSTEM_PROMPT = """You are a careful CV editor. Tailor the supplied candidate profile for the supplied job.
 Never invent or infer experience, employers, dates, credentials, outcomes, responsibilities, or metrics.
-Keep every claim grounded in the candidate's supplied profile. Rewrite and reorder only; do not add
-new facts. Skills must be selected from the candidate's existing skills. For each experience bullet,
-return the source_index of the one source bullet it edits. Preserve all numeric facts from that source
-bullet and never introduce a number absent from that source. Use direct, natural, concise language.
-Do not use these words or phrases: delve, tapestry, testament, landscape, spearhead, synergy.
+Keep candidate claims grounded only in the supplied profile. Rewrite and reorder only; do not add facts.
+Reorder existing skills by relevance to the job, and select skills only from the candidate's supplied
+skills. Prioritize relevant projects and experience, returning each edited bullet with the source_index
+of its original source bullet. Preserve every numeric fact from that source bullet and never introduce
+a number absent from it. Use direct, natural, concise language, with no generic or robotic clichés.
+Do not use these words or phrases: delve, tapestry, testament, landscape, spearhead, synergy,
+dynamic environment, fast-paced environment, passionate about, cutting-edge, leverage, thrilled to apply.
 Return only a JSON object with keys: summary (string), skills (array of strings),
 bullets (array of objects with source_index integer and text string), cover_letter (string).
-The cover letter may use only facts from the supplied candidate profile. Say nothing when profile
-evidence is missing; do not fill gaps with guesses."""
+Write the cover letter as exactly three concise paragraphs, separated by a blank line. Tailor it to the
+role and company using only details stated in the supplied job title, company name, and job description.
+Candidate facts must come only from the supplied profile. Do not imply a company fact, skill, or
+qualification that is not present in the supplied material. Say nothing when evidence is missing."""
 
 
 class TailoringError(RuntimeError):
@@ -66,7 +74,9 @@ class TailoringService:
         if not isinstance(result, dict):
             raise TailoringError("The AI response was not a JSON object.")
         summary = _plain_string(result.get("summary"), 3000)
-        cover_letter = _plain_string(result.get("cover_letter"), 6000)
+        cover_letter = _plain_string(result.get("cover_letter"), 6000, preserve_newlines=True)
+        if len([part for part in re.split(r"\n\s*\n", cover_letter) if part.strip()]) != 3:
+            raise TailoringError("AI returned a cover letter that was not exactly three paragraphs. Please retry.")
         allowed_skills = {str(skill).casefold(): str(skill) for skill in candidate["skills"]}
         skills_in = result.get("skills", [])
         if not isinstance(skills_in, list):
@@ -103,13 +113,23 @@ class TailoringService:
             "cover_letter": cover_letter,
             "review_required": True,
             "grounding_note": "Review every line before using it. AI output can still misstate source material.",
+            "tailored_cv": {"summary": summary, "skills": skills, "bullets": bullets},
+            "application_draft": {
+                "tailored_cv": {"summary": summary, "skills": skills, "bullets": bullets},
+                "cover_letter": {"text": cover_letter, "paragraphs": cover_letter.split("\n\n")},
+            },
         }
 
 
-def _plain_string(value: object, max_length: int) -> str:
+def _plain_string(value: object, max_length: int, preserve_newlines: bool = False) -> str:
     if not isinstance(value, str):
         raise TailoringError("AI returned a field with an invalid format.")
-    text = re.sub(r"\s+", " ", value).strip()
+    if preserve_newlines:
+        text = value.replace("\r\n", "\n").replace("\r", "\n")
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n\s*\n+", "\n\n", text).strip()
+    else:
+        text = re.sub(r"\s+", " ", value).strip()
     if len(text) > max_length:
         raise TailoringError("AI returned text longer than the allowed limit.")
     return text
